@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "react",
+  "owner": "mintuz",
+  "repo": "claude-plugins",
+  "path": "src/web/skills/react",
+  "branch": "main",
+  "sha": "5e07b3fbd58501c3118eef3f6181a614c9e4c849",
+  "source": "manual"
+}
