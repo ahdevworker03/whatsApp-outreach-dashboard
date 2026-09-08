@@ -8,7 +8,7 @@ This backlog tracks implementation progress milestone by milestone, in risk-firs
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M1: WhatsApp Integration Proof | NOT STARTED | |
+| M1: WhatsApp Integration Proof | IN PROGRESS | Minimal Express backend, webhook verify/receive, and outbound send script built in `backend/`. Meta Business Account/number setup and a live send/receive run are still needed to satisfy the acceptance criteria below — see `backend/README.md`. |
 | M2: Backend Foundation and Data Model | NOT STARTED | |
 | M3: Lead Management and Excel/CSV Import | NOT STARTED | |
 | M4: Campaign and Outbound Messaging | NOT STARTED | |
