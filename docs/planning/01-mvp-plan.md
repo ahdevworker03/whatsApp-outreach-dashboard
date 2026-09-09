@@ -8,7 +8,7 @@ This backlog tracks implementation progress milestone by milestone, in risk-firs
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M1: WhatsApp Integration Proof | IN PROGRESS | Minimal Express backend, webhook verify/receive, and outbound send script built in `backend/`. Meta Business Account/number setup and a live send/receive run are still needed to satisfy the acceptance criteria below — see `backend/README.md`. |
+| M1: WhatsApp Integration Proof | DONE | Proven via test app + synthetic Meta test tooling; full production verification deferred to M8. See docs/development-milestones/01-whatsapp-integration-proof.md. |
 | M2: Backend Foundation and Data Model | NOT STARTED | |
 | M3: Lead Management and Excel/CSV Import | NOT STARTED | |
 | M4: Campaign and Outbound Messaging | NOT STARTED | |
@@ -57,7 +57,7 @@ Acceptance: all five pages function against the real backend; dashboard statisti
 
 ### M8: VPS Deployment
 Goal: deploy the system to a small VPS per docs/architecture/01-system-architecture.md and docs/architecture/02-technology-decisions.md.
-Steps: VPS provisioning, Nginx reverse proxy, HTTPS via Let's Encrypt/Certbot, systemd service for the backend, environment variables/secrets configuration, database backups.
+Steps: VPS provisioning, Nginx reverse proxy, HTTPS via Let's Encrypt/Certbot, systemd service for the backend, environment variables/secrets configuration, database backups, real end-to-end WhatsApp verification with the client's live registered number and an organic real-phone reply, once the app is published — this was not possible during M1 due to Meta's unpublished-app restriction on production webhook traffic. See docs/development-milestones/01-whatsapp-integration-proof.md Steps 6-7 for what was proven instead.
 Acceptance: the app is reachable over HTTPS; the webhook URL is reachable by Meta; the backend restarts automatically via systemd.
 
 ### M9: End-to-End Verification and Handover

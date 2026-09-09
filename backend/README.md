@@ -5,6 +5,16 @@ against the Meta Cloud API, per `docs/planning/01-mvp-plan.md` (M1) and
 `docs/architecture/03-backend-architecture.md`. No database, campaign
 logic, scheduler, or frontend yet — those are later milestones.
 
+## Current status
+
+A Meta test App and free test number are already set up and working —
+outbound send has been proven both via the Meta Dashboard directly and via
+this codebase's `metaClient.ts` against the live API. Inbound webhook
+verification has been proven with a synthetic request; a real inbound
+reply and real status callbacks have not yet been observed. Full
+step-by-step detail, including what's still open, is tracked in
+`docs/development-milestones/01-whatsapp-integration-proof.md`.
+
 ## What's here
 
 - `src/index.ts` — minimal Express app: `/health` and the `/webhook` route.
@@ -14,6 +24,9 @@ logic, scheduler, or frontend yet — those are later milestones.
   `POST /messages` endpoint (outbound template send).
 - `scripts/send-test-message.ts` — CLI to send one real template message,
   independent of the Express app.
+- `scripts/one-off-send-test.ts` — throwaway script used to prove
+  `metaClient.ts` against the live API with a hardcoded recipient; not a
+  permanent part of the app, safe to delete once no longer needed.
 
 ## Prerequisites (yours to set up before this can be exercised live)
 
@@ -26,15 +39,22 @@ logic, scheduler, or frontend yet — those are later milestones.
 ## Environment variables
 
 Copy `.env.example` to `.env` and fill in real values. Nothing here is
-committed — `.env` is git-ignored.
+committed — `.env` is git-ignored. **Set these in `backend/.env`, not the
+repo-root `.env`** — the backend's dotenv loading resolves `.env` relative
+to the `backend/` working directory, so values placed only at the repo
+root are not picked up.
 
-| Variable | Where to get it |
-|---|---|
-| `META_ACCESS_TOKEN` | Meta App Dashboard → WhatsApp → API Setup (temporary token, or a permanent System User token) |
-| `META_PHONE_NUMBER_ID` | Same page — "Phone number ID" |
-| `META_API_VERSION` | Defaults to `v21.0`; only change if you need a different Graph API version |
-| `META_WEBHOOK_VERIFY_TOKEN` | Any string you choose — enter the same value in the webhook config step below |
-| `PORT` | Defaults to `3000` |
+| Variable | Where to get it | Status |
+|---|---|---|
+| `META_ACCESS_TOKEN` | Meta App Dashboard → WhatsApp → API Setup (temporary token, or a permanent System User token) | Set — test App token |
+| `META_PHONE_NUMBER_ID` | Same page — "Phone number ID" | Set — `1365718669952060` (test number) |
+| `META_API_VERSION` | Defaults to `v21.0`; only change if you need a different Graph API version | Using default |
+| `META_WEBHOOK_VERIFY_TOKEN` | Any string you choose — enter the same value in the webhook config step below | Not yet set — required for the inbound webhook proof below |
+| `PORT` | Defaults to `3000` | Using default |
+
+The temporary access token above is short-lived (Meta test tokens expire in
+~24 hours); it will need replacing with a fresh temporary token or a
+permanent System User token before this stops being a one-off proof.
 
 ## Install
 
@@ -89,9 +109,12 @@ Then:
 
 ## Acceptance (per docs/planning/01-mvp-plan.md, M1)
 
-- [ ] A real message is delivered to a real phone (via `send-test-message`).
+- [x] A real message is delivered to a real phone — proven via the Meta
+      Dashboard's "Send message" button and via `scripts/one-off-send-test.ts`
+      against the live API (Meta returned a real message ID).
 - [ ] A real reply is received by the backend via webhook (logged).
 - [ ] sent/delivered/read/failed status events are observed and logged.
 
-These require live Meta credentials and a reachable webhook URL, so they
-can't be checked by this codebase alone — run the steps above to verify.
+The remaining two require exposing the backend publicly (e.g. ngrok) and
+registering the webhook in the Meta App Dashboard — see step-by-step detail
+and current status in `docs/development-milestones/01-whatsapp-integration-proof.md`.
