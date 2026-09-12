@@ -21,4 +21,7 @@ export const env = {
   get metaWebhookVerifyToken(): string {
     return requireEnv("META_WEBHOOK_VERIFY_TOKEN");
   },
+  get databaseUrl(): string {
+    return requireEnv("DATABASE_URL");
+  },
 };

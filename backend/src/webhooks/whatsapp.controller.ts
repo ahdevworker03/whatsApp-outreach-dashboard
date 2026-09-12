@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { env } from "../config/env";
+import { handleIncomingMessage, handleStatusUpdate } from "../services/webhook.service";
 
 /**
  * Meta calls this once when the webhook is subscribed in the App Dashboard.
@@ -47,9 +48,9 @@ interface WhatsAppWebhookPayload {
 
 /**
  * Receives all incoming events from Meta: inbound messages and message
- * status updates. For M1 this only logs what was received, proving the
- * round trip end to end. Persistence, auto-reply detection, and follow-up
- * logic are out of scope until M2/M5.
+ * status updates. Persists both (M2 Step 5/6) via the service/repository
+ * layer. Auto-reply detection and follow-up logic are still out of scope
+ * until M4/M5.
  *
  * Always responds 200 immediately — a non-200 response makes Meta retry
  * the same event.
@@ -59,32 +60,36 @@ export function receiveWebhookEvent(req: Request, res: Response): void {
 
   const payload = req.body as WhatsAppWebhookPayload;
 
-  try {
-    for (const entry of payload.entry ?? []) {
-      for (const change of entry.changes ?? []) {
-        for (const message of change.value?.messages ?? []) {
-          console.log("[webhook] inbound message", {
-            from: message.from,
-            id: message.id,
-            type: message.type,
-            text: message.text?.body,
-            timestamp: message.timestamp,
-          });
-        }
+  void (async () => {
+    try {
+      for (const entry of payload.entry ?? []) {
+        for (const change of entry.changes ?? []) {
+          for (const message of change.value?.messages ?? []) {
+            console.log("[webhook] inbound message", {
+              from: message.from,
+              id: message.id,
+              type: message.type,
+              text: message.text?.body,
+              timestamp: message.timestamp,
+            });
+            await handleIncomingMessage(message);
+          }
 
-        for (const status of change.value?.statuses ?? []) {
-          console.log("[webhook] status update", {
-            messageId: status.id,
-            status: status.status,
-            recipientId: status.recipient_id,
-            timestamp: status.timestamp,
-          });
+          for (const status of change.value?.statuses ?? []) {
+            console.log("[webhook] status update", {
+              messageId: status.id,
+              status: status.status,
+              recipientId: status.recipient_id,
+              timestamp: status.timestamp,
+            });
+            await handleStatusUpdate(status);
+          }
         }
       }
+    } catch (error) {
+      // Webhook handler failures are logged but must never crash the process
+      // or surface as a non-200 response (docs/architecture/03-backend-architecture.md).
+      console.error("[webhook] failed to process event", error);
     }
-  } catch (error) {
-    // Webhook handler failures are logged but must never crash the process
-    // or surface as a non-200 response (docs/architecture/03-backend-architecture.md).
-    console.error("[webhook] failed to process event", error);
-  }
+  })();
 }

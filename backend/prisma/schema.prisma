@@ -1,0 +1,138 @@
+// Prisma schema for the WhatsApp Outreach Dashboard.
+// Source of truth for these models: docs/architecture/04-database-design.md.
+// Do not add fields, tables, or enum values here that aren't in that doc —
+// modify the doc first, then regenerate this schema (per docs/rules/api-contracts.md's
+// "contract first" principle, applied here to the data model).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum LeadStatus {
+  NEW
+  CONTACTED
+  FOLLOWUP_1_SENT
+  FOLLOWUP_2_SENT
+  REPLIED
+  COMPLETED
+  FAILED
+}
+
+enum CampaignStatus {
+  DRAFT
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum MessageDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum MessageType {
+  TEMPLATE
+  TEXT
+}
+
+enum MessageStatus {
+  PENDING
+  SENT
+  DELIVERED
+  READ
+  FAILED
+}
+
+enum ConversationStatus {
+  ACTIVE
+  CLOSED
+}
+
+model Lead {
+  id             String    @id @default(uuid()) @db.Uuid
+  phone          String    @unique
+  name           String?
+  businessName   String?   @map("business_name")
+  sourceFile     String?   @map("source_file")
+  status         LeadStatus
+  campaignId     String?   @map("campaign_id") @db.Uuid
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  followup1DueAt DateTime? @map("followup1_due_at")
+  followup2DueAt DateTime? @map("followup2_due_at")
+
+  campaign     Campaign?     @relation(fields: [campaignId], references: [id])
+  messages     Message[]
+  conversation Conversation?
+
+  @@map("leads")
+}
+
+model Campaign {
+  id                  String         @id @default(uuid()) @db.Uuid
+  name                String
+  status              CampaignStatus
+  initialTemplateId   String         @map("initial_template_id")
+  followup1TemplateId String         @map("followup1_template_id")
+  followup1DelayHours Int            @map("followup1_delay_hours")
+  followup2TemplateId String         @map("followup2_template_id")
+  followup2DelayHours Int            @map("followup2_delay_hours")
+  dailyLimit          Int            @default(150) @map("daily_limit")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  leads    Lead[]
+  messages Message[]
+
+  @@map("campaigns")
+}
+
+model Message {
+  id            String           @id @default(uuid()) @db.Uuid
+  leadId        String           @map("lead_id") @db.Uuid
+  campaignId    String           @map("campaign_id") @db.Uuid
+  direction     MessageDirection
+  type          MessageType
+  content       String
+  status        MessageStatus
+  metaMessageId String?          @unique @map("meta_message_id")
+  isAutoReply   Boolean          @default(false) @map("is_auto_reply")
+  sentAt        DateTime?        @map("sent_at")
+  deliveredAt   DateTime?        @map("delivered_at")
+  readAt        DateTime?        @map("read_at")
+  failedAt      DateTime?        @map("failed_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
+
+  lead     Lead     @relation(fields: [leadId], references: [id])
+  campaign Campaign @relation(fields: [campaignId], references: [id])
+
+  @@map("messages")
+}
+
+model Conversation {
+  id                String             @id @default(uuid()) @db.Uuid
+  leadId            String             @unique @map("lead_id") @db.Uuid
+  status            ConversationStatus
+  lastMessageAt     DateTime?          @map("last_message_at")
+  automationStopped Boolean            @default(false) @map("automation_stopped")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+
+  lead Lead @relation(fields: [leadId], references: [id])
+
+  @@map("conversations")
+}
+
+model Setting {
+  id                    String   @id @default(uuid()) @db.Uuid
+  whatsappPhoneNumber   String?  @map("whatsapp_phone_number")
+  whatsappPhoneNumberId String?  @map("whatsapp_phone_number_id")
+  autoReplyPatterns     String[] @map("auto_reply_patterns")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
