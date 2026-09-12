@@ -24,4 +24,7 @@ export const env = {
   get databaseUrl(): string {
     return requireEnv("DATABASE_URL");
   },
+  get apiAccessToken(): string {
+    return requireEnv("API_ACCESS_TOKEN");
+  },
 };
