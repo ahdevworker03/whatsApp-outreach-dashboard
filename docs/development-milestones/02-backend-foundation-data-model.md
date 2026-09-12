@@ -258,7 +258,25 @@ A real `messages` row (plus its related `leads` and `conversations` rows) is wri
 
 2. **No protection against Meta's at-least-once webhook delivery.** `metaMessageId` wasn't unique in the schema, and nothing checked for an existing message before inserting — a redelivered event would create a duplicate `messages` row. Added `@unique` to `metaMessageId` in `schema.prisma` (nullable + unique — Postgres allows multiple `NULL`s) and a new migration (`20260912144818_unique_meta_message_id`, generated via `prisma migrate diff` + applied via `prisma migrate deploy`, since `migrate dev`'s interactive confirmation prompt can't run in this non-TTY environment). `handleIncomingMessage` now calls `findMessageByMetaId` first and returns the existing row immediately if found, before doing anything else.
 
-**Re-verification after both fixes:** posted the identical M1 Step 6 payload twice in a row against a running server:
+3. **Inbound messages stored with `status: DELIVERED`.** Per `docs/architecture/04-database-design.md`, `MessageStatus` is defined purely as an outbound delivery pipeline (`PENDING` → `SENT` → `DELIVERED`/`READ`/`FAILED`), each tied to a lifecycle timestamp (`sent_at`/`delivered_at`/`read_at`/`failed_at`). Storing an inbound message as `DELIVERED` overloaded that value to mean "arrived from the lead" — with no `delivered_at` set, since the message was never actually delivered by us to anyone. This is a real risk for M6 (Inbox): any status-badge rendering or delivery-rate metric that reads `status` without also filtering on `direction` would treat a received message as a confirmed outbound delivery. Added a `RECEIVED` value to the `MessageStatus` enum in `schema.prisma` and a new migration (`20260912181454_add_received_message_status`, generated via `prisma migrate diff --from-config-datasource --to-schema` + applied via `prisma migrate deploy`, same non-interactive approach as fix 2). `createInboundMessage` in `webhook.repository.ts` now sets `status: "RECEIVED"` instead of `"DELIVERED"`. Checked all other existing code (`webhook.service.ts`'s `handleStatusUpdate`, and every other file under `src/`) for anything assuming `MessageStatus` is exclusively an outbound-delivery signal: nothing else references `MessageStatus` or reads `message.status` — `handleStatusUpdate`'s own status whitelist (`SENT`/`DELIVERED`/`READ`/`FAILED`) is unaffected, since Meta's status webhooks never send `RECEIVED` and shouldn't. No dashboard/stats/analytics code exists yet in this repo. Note: `docs/architecture/04-database-design.md`'s `MessageStatus` enum list wasn't updated with `RECEIVED` as part of this fix (out of scope for the fix as approved) — this is a known, temporary doc/schema inconsistency, flagged here per this file's "Repository Truth" rule rather than silently resolved. Resolved — RECEIVED added to docs/architecture/04-database-design.md's MessageStatus list.
+
+**Re-verification after fix 3:** posted a fresh synthetic inbound-message payload (same shape as M1 Step 6, new `id`/`from` to force a new row) against a running server:
+
+```
+curl -X POST localhost:3050/webhook -d '{"entry":[{"changes":[{"value":{"messages":[{"from":"16315551182","id":"ABGGFlA5Fpb","timestamp":"1504902988","type":"text","text":{"body":"this is a text message"}}]}}]}]}'
+→ 200
+```
+
+Confirmed by direct `psql` query:
+
+```
+select id, meta_message_id, direction, type, content, status, delivered_at from messages where meta_message_id = 'ABGGFlA5Fpb';
+ 9abbea82-... | ABGGFlA5Fpb | INBOUND | TEXT | this is a text message | RECEIVED | (null)
+```
+
+`status` is `RECEIVED`, not `DELIVERED`, and `delivered_at` stays null — no longer implying a delivery event that never happened. `prisma validate` still passes after this fix. `npm run build` (`tsc -p tsconfig.json`) still fails with a pre-existing, unrelated error (`tsconfig.json(6,27): error TS5103: Invalid value for '--ignoreDeprecations'`) — confirmed via `git diff` that `tsconfig.json` is untouched by this fix; isolating the changed files (`webhook.repository.ts`, `schema.prisma`) against the same compiler options outside the broken flag type-checks cleanly.
+
+**Re-verification after both prior fixes (1 and 2):** posted the identical M1 Step 6 payload twice in a row against a running server:
 
 ```
 first POST  → 200

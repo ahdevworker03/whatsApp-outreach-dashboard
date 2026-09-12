@@ -44,7 +44,7 @@ export function createInboundMessage(data: {
       direction: "INBOUND",
       type: "TEXT",
       content: data.content,
-      status: "DELIVERED",
+      status: "RECEIVED",
       metaMessageId: data.metaMessageId,
     },
   });

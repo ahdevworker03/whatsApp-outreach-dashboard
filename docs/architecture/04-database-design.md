@@ -115,6 +115,7 @@ updated_at: timestamp
 - DELIVERED — delivered to the recipient's device
 - READ — read by the recipient
 - FAILED — delivery failed
+- RECEIVED — inbound message from the lead, not part of the outbound delivery lifecycle
 
 **ConversationStatus**
 
