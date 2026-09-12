@@ -45,6 +45,7 @@ enum MessageStatus {
   DELIVERED
   READ
   FAILED
+  RECEIVED
 }
 
 enum ConversationStatus {
