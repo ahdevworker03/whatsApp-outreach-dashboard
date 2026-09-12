@@ -204,7 +204,7 @@ Added `src/services/leads.service.ts`: `importLeads(file, fileName)` ties Steps 
 ## Step 6 — Leads API Endpoints
 
 **Status**
-Not Started.
+Complete.
 
 **Must Read**
 `docs/architecture/05-api-design.md` (section 3, Leads Endpoints; section 11, API Access Control), `docs/rules/backend.md` (Requests and Responses — success/error shapes).
@@ -219,9 +219,36 @@ Routes/controllers wiring Steps 1–5 together into the documented HTTP contract
 Each endpoint, called via real HTTP requests (not just unit-level calls), behaves exactly as documented in the API design doc, including the correct HTTP status codes for success/duplicate/not-found/already-contacted cases.
 
 **Verification**
+Ran the server locally (`PORT=3902 tsx src/index.ts`) with a real `API_ACCESS_TOKEN`, hit every endpoint with `curl` against the real dev database, cleaned up all test data afterward:
+- `POST /leads/import` with no token → 401
+- `POST /leads/import` with the Step 3 `.csv` fixture → 201 `{"imported":3,"duplicates":0,"failed":1}`
+- Same file imported again → 201 `{"imported":0,"duplicates":3,"failed":1}` (all now "already exists")
+- The Step 3 `.xlsx` fixture (same 4 rows) → 201 `{"imported":0,"duplicates":3,"failed":1}` — correctly detected as duplicates of the CSV import by phone, confirming the two file formats interoperate through the same pipeline
+- No file field → 400 with a clear message
+- An unsupported file type (`.txt`) → 400 naming the rejected filename
+- `GET /leads?limit=100` → 200 with `{ leads, total }`, timestamps auto-serialized to ISO 8601 strings
+- `GET /leads?status=NOT_A_STATUS` → 400; `GET /leads?status=NEW` → 200, correctly filtered
+- `GET /leads/:id` on a real id → 200 with the lead plus its (empty) `messages` array
+- `GET /leads/:id` on a well-formed but non-existent UUID → 404
+- `GET /leads/:id` on a malformed id → 400 (not a 500 from an invalid DB query)
+- `DELETE /leads/:id` on a `NEW` lead → 200 `{"deleted":true}`, confirmed gone via a follow-up `GET` (404)
+- `DELETE /leads/:id` again on the now-deleted id → 404
+- `DELETE /leads/:id` on a lead manually set to `CONTACTED` → 409 with the "already been contacted" message
 
+Also reran the full `npm test` suite (23 tests, unaffected) and type-checked all of `src/` with the same temporary-tsconfig workaround from Step 5 — zero errors.
 
 **Result**
+Added `src/leads/leads.controller.ts` and `src/leads/leads.routes.ts` (grouped under `src/leads/`, matching the existing `src/webhooks/` routes+controller convention), mounted at `/api/v1/leads` in `src/routes/v1.routes.ts` — replacing Step 1's placeholder `/ping` route now that the real endpoints exist.
+
+Installed `multer` (memory storage — the parsers from Steps 2-3 already operate on `Buffer`s, and import files here are small client spreadsheets, not large/high-volume uploads) for `POST /leads/import`'s multipart handling, 10MB file size limit.
+
+Added `src/lib/asyncHandler.ts`: this repo's Express version (4.x) doesn't catch a rejected promise from an async route handler, so every controller is wrapped with it to forward errors to `errorHandler.ts` instead of crashing the process — avoids repeating try/catch/`next(err)` in all four controller functions.
+
+Extended `src/middleware/errorHandler.ts` to map the leads domain's thrown errors to their documented status codes: `LeadNotFoundError` → 404, `LeadAlreadyContactedError` → 409, `UnsupportedLeadFileTypeError` / `InvalidPhoneNumberError` → 400, `multer.MulterError` → 400. Per `docs/rules/backend.md`, this mapping lives in the global handler, not scattered across controllers — controllers only handle their own local "not found"/"bad input" cases that aren't already an error thrown by the service (e.g. `GET /leads/:id`'s null-result 404, and a malformed-UUID 400 caught before ever reaching Prisma).
+
+Response bodies match `docs/architecture/05-api-design.md` section 2/3's documented shapes exactly (`{ imported, duplicates, failed }`, `{ leads, total }`, the raw Lead object, etc.) — not wrapped in any envelope. Note: this differs from Step 1's placeholder route, which used a `{ data }` wrapper following `docs/rules/backend.md`'s convention; now that real endpoints exist, the actual, project-specific `05-api-design.md` (a higher-priority source of truth per `CLAUDE.md`'s Rule Priority) is what's followed, and the placeholder is gone.
+
+No new business logic was added beyond what Steps 1-5 already built, per this step's scope — routes/controllers only wire the existing service/repository functions to HTTP.
 
 ---
 
@@ -256,5 +283,5 @@ Matches M3's stated acceptance in `01-mvp-plan.md` — "a real client-provided E
 - [x] Step 3 — CSV and Excel Parsing
 - [x] Step 4 — Validation and Duplicate Handling
 - [x] Step 5 — Leads Repository and Service Layer
-- [ ] Step 6 — Leads API Endpoints
+- [x] Step 6 — Leads API Endpoints
 - [ ] Step 7 — End-to-End Import Verification
