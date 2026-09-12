@@ -54,7 +54,7 @@ Note on `docs/rules/backend.md`: that file's Module Structure/Requests-and-Respo
 ## Step 2 — Phone Number Normalization
 
 **Status**
-Not Started.
+Complete.
 
 **Must Read**
 `docs/architecture/04-database-design.md` (section 5, Key Constraints and Rules — "Phone numbers are stored in E.164 format. Normalization happens at import time."), `backend/src/services/webhook.service.ts` (the existing, non-normalizing `+`-prefix handling for comparison).
@@ -69,9 +69,22 @@ A normalization utility function, likely under `src/lib/`, with clear input/outp
 A range of realistic messy input formats (with dashes, spaces, missing `+`, local formats) all normalize to correct E.164, and clearly invalid numbers are rejected with a defined error rather than silently stored malformed.
 
 **Verification**
-
+Added `vitest` (no test framework previously existed in this repo) and wrote `src/lib/phone.test.ts`, 13 cases run via `npm test`, all passing:
+- Already-clean E.164, and the same number with dashes, spaces, and parentheses — all normalize to `+14155552671`
+- A local-format number normalizes correctly when a default country is supplied (`(415) 555-2671` + `"US"`)
+- A different country's number (`+44 20 7946 0958`) and the `00` international-dialing-prefix form of the same number (with a default country to interpret the exit code) both normalize correctly
+- A local-format number with no default country to interpret it against is rejected (can't safely guess the country)
+- Empty string, non-numeric garbage, a too-short number, and a real-length-but-invalid-pattern number (bad US area code) are all rejected
+- Confirmed the rejection path always throws `InvalidPhoneNumberError` rather than returning any value
 
 **Result**
+Installed `libphonenumber-js` (`^1.13.13`) and added `src/lib/phone.ts` exporting `normalizePhoneNumber(raw, defaultCountry?)` and `InvalidPhoneNumberError`.
+
+**Library decision:** used `libphonenumber-js` over hand-rolled regex, per this step's instruction to evaluate that against custom logic. Justification: phone validity/formatting rules vary per country (length, prefixes, area codes) in ways a regex would either miss or reimplement poorly; `libphonenumber-js` is a maintained, widely-used, much-smaller-footprint port of Google's `libphonenumber` and already handles every messy-input case this step lists. Used the `/max` metadata build (not the library's default `/min`) — `/min`'s `isValid()` only checks number length, while `/max` also validates per-country digit patterns, which is what "clearly invalid numbers are rejected" requires; the too-short and bad-area-code test cases above would not both be caught under `/min`.
+
+`defaultCountry` is an optional parameter, not a hardcoded assumption — the contract and architecture docs don't name a single country for this project's leads, so a local (non-"+") number with no `defaultCountry` given is rejected rather than guessed at; callers (Step 4) can supply one if the import context establishes it.
+
+Added `vitest` (`^2.1.9`) as a dev dependency and a `test` script, since `docs/rules/testing.md` requires tests for new features and no test runner existed yet in this repo. Note: `vitest@5` (latest) conflicts with this repo's pinned `@types/node@^20`, which requires `@types/node@^22`; installed `vitest@^2` instead, which is compatible. `npm audit` now flags `vitest` itself (critical) plus several of its transitive dev-only dependencies — these affect the test runner, not the production server, and are unrelated to `libphonenumber-js` (zero runtime dependencies).
 
 ---
 
@@ -202,7 +215,7 @@ Matches M3's stated acceptance in `01-mvp-plan.md` — "a real client-provided E
 ## Milestone Checklist
 
 - [x] Step 1 — API Access Control Middleware
-- [ ] Step 2 — Phone Number Normalization
+- [x] Step 2 — Phone Number Normalization
 - [ ] Step 3 — CSV and Excel Parsing
 - [ ] Step 4 — Validation and Duplicate Handling
 - [ ] Step 5 — Leads Repository and Service Layer
