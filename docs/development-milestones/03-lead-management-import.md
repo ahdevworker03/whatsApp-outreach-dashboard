@@ -127,7 +127,7 @@ Explicitly out of scope here per the milestone (not implemented): validation, de
 ## Step 4 — Validation and Duplicate Handling
 
 **Status**
-Not Started.
+Complete.
 
 **Must Read**
 `docs/architecture/04-database-design.md` (`leads.phone` unique constraint), `docs/rules/database.md` (section 5, Integrity — "Database constraints complement application validation; they do not replace it.").
@@ -142,16 +142,30 @@ Validation and dedup logic only, operating on Step 3's parsed rows.
 Invalid rows (bad/missing phone) are rejected and counted, not silently dropped without a count; rows matching an existing lead's phone are detected as duplicates and not inserted as new leads.
 
 **Verification**
-
+`npm test` — 6 new cases in `src/lib/leadRowValidator.test.ts`, all passing:
+- A valid row is accepted with its phone normalized to E.164 via Step 2
+- A row with a missing phone is rejected and shows up in `invalid` with a stated reason (not silently dropped)
+- A row with an unparseable/garbage phone is rejected and counted the same way
+- A row whose normalized phone matches an existing lead's phone (supplied via `existingPhones`) is placed in `duplicates`, not `valid` — not inserted as a new lead
+- Two rows in the same file with the same phone (different formatting) — the first is valid, the second is caught as a duplicate too
+- A mixed batch of 5 rows (1 valid, 2 invalid, 2 duplicate — one already-in-DB, one repeated-in-file) sorts every row into the correct bucket with the correct reason
 
 **Result**
+Added `src/lib/leadRowValidator.ts` exporting `validateLeadRows(rows, existingPhones)`, which sorts Step 3's `ParsedLeadRow[]` into `{ valid, invalid, duplicates }`:
+- **Invalid**: missing phone, or a phone that fails Step 2's `normalizePhoneNumber` — each entry carries the original row and a reason string, so counts are never lost.
+- **Duplicate**: phone matches an entry in the caller-supplied `existingPhones` set (`"already exists"`), or matches an earlier row already accepted from the same file (`"duplicate in file"`) — both cases are excluded from `valid` and reported separately from `invalid`.
+- **Valid**: everything else, with `phone` replaced by its normalized E.164 form (`name`/`business_name` pass through as-is — both nullable on `Lead`, per `prisma/schema.prisma`, so only `phone` is a required field here).
+
+`existingPhones` is a plain `ReadonlySet<string>` parameter rather than a database query — this step stays pure validation/dedup logic with no persistence dependency, per its scope; Step 5's repository is what will query current phones and call this function. This also directly follows `docs/rules/database.md`'s Integrity rule ("Database constraints complement application validation; they do not replace it") — the app checks and reports duplicates/invalid rows itself, rather than relying on `leads.phone`'s unique constraint to reject them at the database (which would surface as an ugly `P2002` error mid-batch instead of the documented `{ imported, duplicates, failed }` response shape).
+
+Note on `docs/rules/database.md`: like `backend.md` (flagged in Step 1), this file describes a different project's conventions (`lib/db/prisma/schema.prisma`, `organization_id` multi-tenancy, a `vehicle_rental_test` database) that don't apply here — this project's `project.md` explicitly lists "No multi-tenancy" as a non-goal. Followed only the generically-applicable Integrity guidance above; flagging the mismatch rather than applying the rest.
 
 ---
 
 ## Step 5 — Leads Repository and Service Layer
 
 **Status**
-Not Started.
+Complete.
 
 **Must Read**
 `docs/rules/backend.md` (layer flow: route → controller → service → repository → Prisma/database; Module Structure section), `backend/src/repositories/webhook.repository.ts` and `backend/src/services/webhook.service.ts` (the existing `upsertLeadByPhone` pattern being split out of here).
@@ -166,9 +180,24 @@ The repository/service layer only, following the same controller → service →
 Each function is directly callable and produces correct results against the real dev database (not just type-checks) — verified with direct calls, not yet via HTTP.
 
 **Verification**
+`npx tsx scripts/verify-leads-service.ts` — direct calls against the real dev database (`whatsapp_outreach_dev`), all 8 checks passed, all rows created by the script cleaned up afterward (confirmed 0 remaining):
+1. `importLeads()` on a 3-row CSV (1 valid, 1 invalid phone, 1 duplicate-in-file) → `{ imported: 1, duplicates: 1, failed: 1 }`
+2. Re-running `importLeads()` with the same file → `{ imported: 0, duplicates: 2, failed: 1 }` (both rows now match the already-inserted lead)
+3. `listLeads({ status: "NEW" })` finds the newly created lead among the results, with a correct `total`
+4. `getLeadById()` returns it with a `messages` array (empty — none sent yet)
+5. `getLeadById()` with a random UUID returns `null`
+6. `deleteLead()` succeeds while the lead's status is still `NEW`, and the lead is confirmed gone afterward
+7. `deleteLead()` on that now-deleted id throws `LeadNotFoundError`
+8. `deleteLead()` on a lead whose status was set to `CONTACTED` throws `LeadAlreadyContactedError`
 
+Also ran the full `npm test` suite (23 tests from Steps 2-4, unaffected) and type-checked all of `src/` with a temporary local tsconfig that removes the pre-existing broken `ignoreDeprecations` setting (flagged in Step 1) — zero errors.
 
 **Result**
+Added `src/repositories/leads.repository.ts` (Prisma-only): `createManyLeads`, `findExistingPhones` (feeds Step 4's `existingPhones` set), `listLeads` (status filter + pagination, returns `[leads, total]`), `findLeadById` (includes `messages`), `deleteLeadById`. Split out of `webhook.repository.ts` as M2 anticipated — `webhook.repository.ts`'s `upsertLeadByPhone` still owns the webhook-driven upsert path only.
+
+Added `src/services/leads.service.ts`: `importLeads(file, fileName)` ties Steps 3-5 together — dispatches CSV/Excel parsing by file extension, normalizes each row's phone to query `findExistingPhones` with the same E.164 form the DB actually stores (querying with raw, un-normalized cell text would silently miss real duplicates), runs Step 4's `validateLeadRows`, and persists only the valid rows — returning `{ imported, duplicates, failed }` matching `docs/architecture/05-api-design.md` section 3's documented response exactly. Also `listLeads`, `getLeadById`, and `deleteLead`.
+
+`deleteLead` enforces "not allowed if lead has been contacted" (the business rule Step 6's `DELETE /leads/:id` needs) by rejecting any status other than `NEW` — per the status lifecycle in `docs/architecture/04-database-design.md`, a lead only ever leaves `NEW` once contacted. It throws `LeadNotFoundError` / `LeadAlreadyContactedError` (plain `Error` subclasses, matching the existing `InvalidPhoneNumberError` pattern from Step 2) rather than deciding an HTTP status itself — Step 6's controller maps these to 404/409, keeping the service HTTP-agnostic per `docs/rules/backend.md`'s layer split.
 
 ---
 
@@ -225,7 +254,7 @@ Matches M3's stated acceptance in `01-mvp-plan.md` — "a real client-provided E
 - [x] Step 1 — API Access Control Middleware
 - [x] Step 2 — Phone Number Normalization
 - [x] Step 3 — CSV and Excel Parsing
-- [ ] Step 4 — Validation and Duplicate Handling
-- [ ] Step 5 — Leads Repository and Service Layer
+- [x] Step 4 — Validation and Duplicate Handling
+- [x] Step 5 — Leads Repository and Service Layer
 - [ ] Step 6 — Leads API Endpoints
 - [ ] Step 7 — End-to-End Import Verification
