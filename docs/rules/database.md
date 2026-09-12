@@ -1,59 +1,39 @@
 # Database Rules
 
-## Table of Contents
+These rules describe the conventions actually established in this repo's Prisma/PostgreSQL layer. When code and this file disagree, flag it (per `docs/rules/project.md`'s Repository Truth) — don't silently pick one.
 
-| # | Section |
-| - | ------- |
-| 1 | [Persistence Truth](#persistence-truth) |
-| 2 | [Migrations](#migrations) |
-| 3 | [Conventions](#conventions) |
-| 4 | [Multi-Tenancy](#multi-tenancy) |
-| 5 | [Integrity](#integrity) |
-| 6 | [Safety](#safety) |
+## 1. Persistence Truth
 
-These rules govern PostgreSQL persistence through Prisma in this repository. SQL and Prisma specifics belong in the corresponding skills.
-
-## Persistence Truth
-
-- PostgreSQL is the system of record.
-- Prisma is the approved backend persistence path.
-- `lib/db/prisma/schema.prisma` is the current Prisma data-model source.
+- PostgreSQL is the system of record; Prisma is the only approved persistence path.
+- `backend/prisma/schema.prisma` is the current data-model source — itself derived from `docs/architecture/04-database-design.md`. Do not add a field, table, or enum value to the schema that isn't in that doc; update the doc first, then the schema.
+- `backend/src/prisma/client.ts` is the shared Prisma client singleton. Every persistence-touching module imports it from there — never instantiate a second `PrismaClient`.
 - Generated Prisma client artifacts must not be edited manually.
 
-## Migrations
+## 2. Migrations
 
-- Every schema change requires an intentional migration.
-- Schema changes precede dependent application/API behavior.
-- Inspect current data before introducing constraints, unique indexes, backfills, or ownership rules.
-- Do not modify already-applied migrations unless the repository explicitly requires that workflow.
+- Every schema change requires a real migration (`npx prisma migrate dev`), tracked under `backend/prisma/migrations/`.
+- Schema changes precede the application/API behavior that depends on them.
+- Inspect current data before introducing a new constraint, unique index, or backfill.
+- Do not modify an already-applied migration.
 
-## Conventions
+## 3. Conventions
 
-Preserve the current approved conventions:
+- UUID primary keys: `id String @id @default(uuid()) @db.Uuid`.
+- Prisma field names are `camelCase`; every field maps to a `snake_case` column via `@map`, and every model maps to a plural `snake_case` table via `@@map` (e.g. `businessName` → `business_name`, model `Lead` → table `leads`).
+- Phone numbers are stored normalized to E.164 (`src/lib/phone.ts`'s `normalizePhoneNumber`). Normalization happens once, at write time (import or webhook) — never assumed or re-derived on read.
 
-- UUID primary keys.
-- Singular table names and `snake_case` database naming.
-- Money as `Decimal(10, 2)`.
-- Audit fields and soft delete on business models where applicable.
+## 4. Multi-Tenancy
 
-## Multi-Tenancy
+Not applicable. This is a single-user tool (`docs/rules/project.md`'s Explicit Non-Goals list "no multi-tenancy, no multiple users, no roles/permissions") — no `organization_id`, no tenant scoping, no per-tenant isolation strategy anywhere in the schema.
 
-- Tenant-owned models should carry `organization_id` according to approved schema conventions.
-- Scope tenant-owned reads and writes by organization.
-- Any model that omits a direct `organization_id` must have an explicitly approved ownership/isolation strategy.
-- Never allow ordinary tenant operations to trust a client-controlled organization identifier when authenticated tenant context is available.
+## 5. Integrity
 
-## Integrity
+- Use foreign keys and uniqueness constraints where Postgres can reliably enforce an invariant (e.g. `leads.phone @unique`; `Message`/`Conversation` foreign keys to `Lead`; `Message` to `Campaign`).
+- Database constraints complement application validation; they do not replace it. Concretely: `src/lib/leadRowValidator.ts` detects and reports a duplicate phone itself before insert, rather than letting `leads.phone`'s unique constraint reject it as an unhandled `P2002` mid-batch.
+- Preserve referential integrity between `Lead`, `Campaign`, `Message`, and `Conversation`.
 
-- Use foreign keys, uniqueness, and check constraints where PostgreSQL can reliably enforce invariants.
-- Database constraints complement application validation; they do not replace it.
-- Preserve referential integrity.
-- Prefer soft deletion for business history unless an approved requirement requires permanent removal.
+## 6. Safety
 
-## Safety
-
-- Follow `safety.md` for destructive operations.
-- Never reset, truncate, drop, or perform destructive direct data repair against development or production data without explicit approval.
-- Verify the target database before destructive commands.
-- The dedicated `vehicle_rental_test` database may be reset when required by an approved task/testing workflow.
-- Never treat destructive test-database permissions as permission to modify development data.
+- Never reset, truncate, drop, or run destructive direct data repair against the dev database without explicit approval.
+- Verify the target database (`DATABASE_URL`, currently the local `whatsapp_outreach_dev` cluster) before any destructive command.
+- A verification script that creates rows against the real dev database (e.g. `scripts/verify-leads-service.ts`) must delete every row it created before finishing.

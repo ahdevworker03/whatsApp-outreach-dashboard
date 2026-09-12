@@ -10,7 +10,7 @@ This backlog tracks implementation progress milestone by milestone, in risk-firs
 |---|---|---|
 | M1: WhatsApp Integration Proof | DONE | Proven via test app + synthetic Meta test tooling; full production verification deferred to M8. See docs/development-milestones/01-whatsapp-integration-proof.md. |
 | M2: Backend Foundation and Data Model | DONE | PostgreSQL, Prisma schema/migration, client singleton, and webhook persistence all in place; a placeholder campaign row stands in for real campaign assignment until M4. See docs/development-milestones/02-backend-foundation-data-model.md. |
-| M3: Lead Management and Excel/CSV Import | NOT STARTED | |
+| M3: Lead Management and Excel/CSV Import | DONE | Lead import (CSV/Excel), validation, dedup, and full CRUD API complete and verified end-to-end against the real dev database. API access control middleware, phone normalization, and file parsing all built from scratch this milestone. See docs/development-milestones/03-lead-management-import.md. |
 | M4: Campaign and Outbound Messaging | NOT STARTED | |
 | M5: Follow-up Automation | NOT STARTED | |
 | M6: Inbox | NOT STARTED | |

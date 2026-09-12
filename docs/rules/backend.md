@@ -1,96 +1,65 @@
 # Backend Rules
 
-## Table of Contents
+These rules describe the conventions actually established in `backend/` by M2 and M3. When code and this file disagree, treat it as a real inconsistency to flag (per `docs/rules/project.md`'s Repository Truth) — not something to silently resolve either way.
 
-| # | Section |
-| - | ------- |
-| 1 | [Architecture](#architecture) |
-| 2 | [Module Structure](#module-structure) |
-| 3 | [Layer Responsibilities](#layer-responsibilities) |
-| 4 | [Requests and Responses](#requests-and-responses) |
-| 5 | [Validation](#validation) |
-| 6 | [Transactions](#transactions) |
-| 7 | [Business Rule Ownership](#business-rule-ownership) |
-| 8 | [Scope](#scope) |
-| 9 | [Contracts and Types](#contracts-and-types) |
+## 1. Structure
 
-These rules govern backend structure and request flow in `apps/api`. Framework and language specifics belong in the corresponding skills.
-
-## Architecture
-
-- Follow modular, feature-first backend organization under `src/modules/`.
-- Preserve the layer flow:
+Flat, not modular-by-domain at every layer — this is a small two-folder repo (`backend/`, `frontend/`), not a monorepo:
 
 ```text
-route → controller → service → repository → Prisma/database
+backend/src/
+  config/        env.ts — fail-fast getters for required env vars
+  routes/        v1.routes.ts — mounts domain routers under /api/v1, applies auth
+  <domain>/      route + controller pair, grouped by domain (leads/, webhooks/)
+  services/      <domain>.service.ts — one file per domain
+  repositories/  <domain>.repository.ts — one file per domain, Prisma-only
+  middleware/    apiAuth.ts, errorHandler.ts
+  lib/           shared/pure logic — phone.ts, leadFileParser.ts, leadRowValidator.ts, asyncHandler.ts
+  prisma/        client.ts — the shared Prisma client singleton
 ```
 
-- Each module owns its business domain; do not spread a domain's logic across unrelated modules.
+Route and controller live together under their own domain folder (`src/leads/leads.routes.ts` + `leads.controller.ts`, `src/webhooks/whatsapp.routes.ts` + `whatsapp.controller.ts`). Services and repositories do not get their own domain folder — they live in the shared top-level `services/` and `repositories/` folders, one file per domain. Do not introduce an `apps/api` layout or a `src/modules/<domain>/` tree for a new domain; extend the pattern above instead.
 
-## Module Structure
+## 2. Layer Flow
 
-Use consistent module filenames where the responsibility exists:
+route → controller → service → repository → Prisma/database.
 
-```text
-<domain>.routes.ts
-<domain>.controller.ts
-<domain>.service.ts
-<domain>.repository.ts
-<domain>.validation.ts
-<domain>.types.ts
-```
+- Routes register endpoints and apply middleware only (auth, `multer`, `asyncHandler`) — no business logic.
+- Controllers are thin and HTTP-focused: parse the request, call one service function, shape the response. A controller may resolve its own request-level failure directly (a malformed id, an unknown status filter, a missing upload) without involving the service — that's request validation, not a business decision.
+- Services own workflows and business rules, and are the only layer allowed to throw a domain error (e.g. `LeadNotFoundError`, `LeadAlreadyContactedError`, `UnsupportedLeadFileTypeError`).
+- Repositories are Prisma-only: no business decisions, no calling services, no HTTP awareness.
 
-Do not require a module to include a file for a responsibility it does not have.
+## 3. Async Handlers
 
-## Layer Responsibilities
+This repo's Express version (4.x) does not catch a rejected promise thrown by an async route handler — it crashes the process instead of reaching the error handler. Wrap every async controller with `src/lib/asyncHandler.ts` rather than repeating try/catch/`next(err)` per route.
 
-- Routes register endpoints and apply middleware only; no business logic.
-- Controllers remain thin and HTTP-focused.
-- Services own workflows, business rules, and transactions.
-- Repositories own persistence and hide Prisma details.
-- Controllers do not access Prisma directly.
-- Repositories do not call services or contain business decisions.
+## 4. Requests and Responses
 
-## Requests and Responses
+Both shapes come from `docs/architecture/05-api-design.md` section 2 — that doc is the source of truth here, not this file:
 
-- Use the shared `AppError(status, code, message)` for expected failures.
-- Preserve the success shape `{ data }`.
-- Preserve the error shape `{ error: { code, message } }`.
-- Let the global error handler serialize expected errors; do not re-serialize them in controllers.
+- Success responses return the documented body with no wrapper (`{ imported, duplicates, failed }`, `{ leads, total }`, the raw resource) — never a `{ data }` envelope.
+- Errors return `{ error: string, code?: string }`.
+- There is no shared `AppError` class. A domain error is a plain `Error` subclass (e.g. `InvalidPhoneNumberError` in `src/lib/phone.ts`, `LeadNotFoundError` in `src/services/leads.service.ts`) thrown from a service.
+- `src/middleware/errorHandler.ts` is the single place that maps a thrown error to its HTTP status and serializes it. Do not catch and re-serialize a known domain error inside a controller — add the mapping to `errorHandler.ts` instead.
 
-## Validation
+## 5. Validation
 
-Validate at three distinct layers:
+Three distinct layers, each catching a different kind of problem:
 
-- request/schema validation
-- service/business validation
-- database integrity constraints
+- **Request/schema** (controller): is the input well-formed — a real UUID, a known enum value, a file actually present?
+- **Business** (service, e.g. `src/lib/leadRowValidator.ts`): is this input valid *and reconcilable with current data* — required fields present, not a duplicate?
+- **Database integrity** (Prisma schema / Postgres constraints): the last backstop, never the only check — see `docs/rules/database.md`'s Integrity section.
 
-Refer to `api-contracts.md` for generated API validation behavior.
+## 6. Transactions
 
-## Transactions
+No shared transaction/retry helper exists in this repo yet. Use `prisma.$transaction` directly wherever a workflow needs atomicity across more than one write; introduce a shared retry helper only once a second call site actually needs one — do not build it speculatively.
 
-- Use the existing shared transaction infrastructure (`transaction` and `retrySerializable`).
-- Make multi-record lifecycle changes transactional when atomicity matters.
-- Use serializable transactions for concurrency-sensitive lifecycle changes according to established repository patterns.
-- Retry only documented serialization conflicts.
-- Map Prisma errors through the existing error-normalization helpers in `database/errors.ts`.
+## 7. Testing
 
-## Business Rule Ownership
+- `vitest` (`npm test`) covers pure logic — anything under `src/lib/` gets a co-located `*.test.ts`.
+- Code that touches Prisma (repositories, services) is verified with a one-off `scripts/verify-*.ts` script run directly against the real dev database, not mocked. See `docs/rules/testing.md`.
 
-- Every business rule should have one clear owning domain.
-- Cross-domain workflows may coordinate through service-level boundaries without duplicating the underlying rule.
-- Example: Rental owns rental overlap/booking rules; Maintenance owns maintenance lifecycle rules. Both may influence vehicle operational availability.
+## 8. Scope
 
-## Scope
-
-- Keep files focused.
-- Roughly 250–300 lines is a guideline where practical, not a mechanical limit.
-- Split a file only when it improves cohesion, correctness, or testability.
-
-## Contracts and Types
-
-- Follow `docs/rules/api-contracts.md` for the API spec and generated code.
-- Follow `docs/rules/typeScript-rules.md` for strict typing.
-
-Do not duplicate those rules here.
+- Keep files focused; split by cohesion, not a line-count target.
+- Prefer the existing structure and naming over introducing a new pattern for a single file.

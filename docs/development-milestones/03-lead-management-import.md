@@ -16,7 +16,7 @@ Acceptance criteria for the milestone as a whole:
 - No `/api/v1` route is mounted anywhere in `src/index.ts` — only `/webhook` and `/health` exist. Consequently, no `API_ACCESS_TOKEN` bearer-auth middleware exists either (`docs/architecture/05-api-design.md` section 11) — there's been nothing for it to guard yet. No `API_ACCESS_TOKEN` in `.env.example`, no getter for it in `src/config/env.ts`.
 - No E.164 phone normalization logic exists anywhere. The webhook path's `+`-prefix trick only works because Meta's `from` field arrives pre-cleaned; arbitrary spreadsheet input (dashes, spaces, parentheses, missing `+`, local formats) has no handling at all yet.
 
-All 7 steps below are Not Started.
+All 7 steps below are Complete. Milestone done.
 
 ---
 
@@ -255,7 +255,7 @@ No new business logic was added beyond what Steps 1-5 already built, per this st
 ## Step 7 — End-to-End Import Verification
 
 **Status**
-Not Started.
+Complete.
 
 **Must Read**
 `docs/planning/01-mvp-plan.md` (M3 acceptance criteria).
@@ -270,9 +270,17 @@ Verification only, no new code expected unless this surfaces a bug.
 Matches M3's stated acceptance in `01-mvp-plan.md` — "a real client-provided Excel/CSV file imports correctly with duplicates and invalid rows handled as expected," confirmed via direct database inspection, not just the HTTP response.
 
 **Verification**
+No client-provided file exists yet (pre-launch), so built a realistic 9-row client-like CSV (`client-leads-export.csv`) covering exactly the scenarios this acceptance criterion names: messy phone formats (dashes, spaces, parentheses, a local number with no country code at all), a row duplicating another row within the same file, a row duplicating a lead already in the dev database, and multiple distinct kinds of invalid rows (missing phone, garbage/too-short phone, unresolvable local format) — plus realistic missing name/business-name cells. Ran it through the real, running server via `POST /api/v1/leads/import` (not a direct service call), then confirmed the outcome via direct Prisma queries against the dev database (not just the HTTP response):
 
+- HTTP response: `{"imported":4,"duplicates":2,"failed":3}` — matching the row-by-row expectation worked out in advance
+- Direct DB query for `sourceFile: "client-leads-export.csv"` returned exactly the 4 expected leads, each with the correct normalized E.164 phone, `name`/`businessName` (including the two rows with a legitimately blank field), and `status: "NEW"`
+- The pre-existing lead the file intentionally duplicated (`+16315551182`) was confirmed still present as exactly one row, unmodified — not touched or duplicated by the import
+- A direct query for the 3 invalid-row names and the 1 duplicate-in-file name confirmed all four produced no lead record at all — not silently inserted, not partially inserted
+
+All test leads created by this run were deleted afterward; the dev database is back to its pre-verification state.
 
 **Result**
+No bug surfaced — nothing to fix. Every case (valid, both kinds of duplicate, every kind of invalid row) behaved exactly as designed across Steps 2-6, end-to-end through the real HTTP endpoint and confirmed at the database level. M3 is complete.
 
 ---
 
@@ -284,4 +292,16 @@ Matches M3's stated acceptance in `01-mvp-plan.md` — "a real client-provided E
 - [x] Step 4 — Validation and Duplicate Handling
 - [x] Step 5 — Leads Repository and Service Layer
 - [x] Step 6 — Leads API Endpoints
-- [ ] Step 7 — End-to-End Import Verification
+- [x] Step 7 — End-to-End Import Verification
+
+---
+
+## Post-Milestone Follow-ups
+
+Three items flagged during M3 were resolved before closing the milestone:
+
+**1. `docs/rules/backend.md` and `docs/rules/database.md` rewritten.** Both described a different project (an `apps/api`/`src/modules/<domain>/` layout, an `{ error: { code, message } }` shape, multi-tenancy/`organization_id`) — flagged repeatedly across Steps 1, 4, 5, and 6 rather than applied. Both files now describe this repo's actual, working conventions (the flat `backend/src/{routes,services,repositories,middleware,lib}` structure, `src/leads/`/`src/webhooks/` domain grouping, the `{ error: string, code? }` shape from `docs/architecture/05-api-design.md`, no multi-tenancy), in the same trimmed style as `docs/rules/project.md`.
+
+**2. The `vitest` critical npm audit finding was investigated and fixed, not deferred.** It was [GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp) (CVSS 9.8, arbitrary file read/execute) plus a related moderate path-traversal advisory in `@vitest/mocker` ([GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9)) — both affecting the `vitest@2.1.9` pinned in Step 2. Both explicitly require the **Vitest UI/API server exposed to the network** (`--ui`, `--api.host` set to a non-localhost address) or Vitest's browser mode; this project only ever runs `vitest run` via `npm test` — no UI, no `--api.host`, no browser mode — so there was never an exposure path here. Still, since no patched release exists on the 2.x line (per the advisories, 2.x/3.x are unmaintained), deferring would have meant carrying a critical CVE indefinitely for no reason: `@types/node` was only pinned to `^20` for `vitest@2` compatibility (Step 2's note), and `@types/node` is a type-only dev dependency — bumping it doesn't change the actual Node runtime (`engines.node: ">=18"` unchanged; the dev machine already runs Node 24). Upgraded `vitest` to `^5.0.0` and `@types/node` to `^22.10.0` together; all 23 tests still pass unmodified. `npm audit` now reports 0 critical findings (down from 1 critical + several vitest-linked moderates; 8 pre-existing, unrelated findings remain in `prisma`/`express`/`exceljs` and their transitive deps, untouched by this change).
+
+**3. `tsconfig.json`'s `ignoreDeprecations` fixed at the source.** Flagged since Step 1 as `TS5103: Invalid value for '--ignoreDeprecations'` — M2 had set it to `"6.0"`, not a value the installed TypeScript 5.9.3 accepts (this project isn't on TypeScript 6.x). The setting exists to silence `moduleResolution: "node10"`'s deprecation warning (introduced as a deprecation in TypeScript 5.0); the correct value for that is `"5.0"`. Changed `"6.0"` → `"5.0"`. `npm run build` (`tsc -p tsconfig.json`) now exits 0 with no errors and no temporary/workaround tsconfig — confirmed with a full clean build (`rm -rf dist && npm run build`), and every step's own type-check (previously done via a temporary local tsconfig in Steps 5 and 6) would now pass the same way directly.
