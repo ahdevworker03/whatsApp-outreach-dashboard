@@ -121,3 +121,17 @@ export async function replyToConversation(conversationId: string, message: strin
 
   return outboundMessage;
 }
+
+// PATCH /api/v1/inbox/:conversation_id/status (docs/architecture/
+// 05-api-design.md section 6). This step's scope is the manual CLOSED
+// transition only (see the milestone doc's Explicit exclusions) — the
+// controller is the one that restricts the accepted value to "CLOSED";
+// automatic reactivation to ACTIVE on a new inbound message is untouched,
+// still owned by webhook.repository.ts's upsertConversationForLead (M5).
+export async function closeConversation(id: string) {
+  const conversation = await repo.findConversationWithLead(id);
+  if (!conversation) {
+    throw new ConversationNotFoundError(id);
+  }
+  return repo.updateConversationStatus(id, "CLOSED");
+}

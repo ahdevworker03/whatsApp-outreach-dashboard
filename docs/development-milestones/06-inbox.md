@@ -227,7 +227,25 @@ No automatic re-opening logic here — M5 already handles reactivation to `ACTIV
 Real HTTP request against the real dev DB, plus confirmation that a subsequent inbound message (simulated) correctly reactivates it to `ACTIVE` per M5's existing behavior — i.e. Step 4 doesn't accidentally break that.
 
 **Result**
-To be filled in during implementation.
+
+Implemented `PATCH /api/v1/inbox/:conversation_id/status`:
+
+- `inbox.repository.ts` — `updateConversationStatus(id, status)`.
+- `inbox.service.ts` — `closeConversation(id)`: existence check (`ConversationNotFoundError` → 404, already mapped) then sets `status: CLOSED`.
+- `inbox.controller.ts` — `updateInboxStatus`: validates `conversation_id` as a UUID, and — **interpretive choice, flagged per `docs/rules/project.md`'s Repository Truth** — restricts the accepted `status` value to exactly `"CLOSED"` rather than any `ConversationStatus` enum value. This step's own objective quotes the request body as `{ status: "CLOSED" }` specifically (not the general enum campaign's status endpoint accepts), and its Explicit exclusions rule out reopening logic here; the doc doesn't state whether a manual `ACTIVE` transition should be rejected or silently accepted, so this treats anything other than `"CLOSED"` — including `"ACTIVE"` — as invalid for this endpoint rather than inventing an undocumented manual-reopen feature. Worth a look if manual reopen turns out to be wanted later.
+- Reused the existing `ConversationNotFoundError`; no new error class needed.
+- `inbox.routes.ts` — `PATCH /:conversation_id/status`.
+
+`npm run build` passes clean.
+
+**Verification:** real HTTP requests via a one-off script (deleted after use) against the real dev DB:
+
+- `PATCH .../status { status: "CLOSED" }` on an `ACTIVE` conversation → 200, confirmed `CLOSED` both in the response and by a direct DB query.
+- `PATCH .../status { status: "BOGUS" }` → 400.
+- `PATCH .../status` on an unknown `conversation_id` → 404.
+- Simulated a new inbound message via `webhook.service.ts`'s `handleIncomingMessage()` (M5's existing path, called directly rather than through the real webhook endpoint) against the just-closed conversation: confirmed it reactivates to `ACTIVE` exactly as before — Step 4 does not interfere with M5's reactivation behavior.
+
+All checks passed.
 
 ---
 
@@ -253,5 +271,5 @@ To be filled in during implementation.
 - [x] Step 1 — Inbox Repository and List/Detail Endpoints
 - [x] Step 2 — Free-Text Send in metaClient.ts
 - [x] Step 3 — Manual Reply Endpoint with 24-Hour Window Enforcement
-- [ ] Step 4 — Mark Conversation Closed
+- [x] Step 4 — Mark Conversation Closed
 - [ ] Step 5 — End-to-End Inbox Verification

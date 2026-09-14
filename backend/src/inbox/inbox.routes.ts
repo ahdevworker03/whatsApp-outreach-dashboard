@@ -9,3 +9,4 @@ export const inboxRouter = Router();
 inboxRouter.get("/", asyncHandler(inboxController.listInbox));
 inboxRouter.get("/:conversation_id", asyncHandler(inboxController.getInboxConversation));
 inboxRouter.post("/:conversation_id/reply", asyncHandler(inboxController.replyToInbox));
+inboxRouter.patch("/:conversation_id/status", asyncHandler(inboxController.updateInboxStatus));

@@ -122,3 +122,14 @@ export function updateConversationLastMessageAt(id: string, lastMessageAt: Date)
     data: { lastMessageAt },
   });
 }
+
+// PATCH /api/v1/inbox/:conversation_id/status (M6 Step 4). Only the manual
+// CLOSED transition — automatic reactivation to ACTIVE on a new inbound
+// message stays owned by webhook.repository.ts's upsertConversationForLead,
+// unchanged by this function.
+export function updateConversationStatus(id: string, status: ConversationStatus) {
+  return prisma.conversation.update({
+    where: { id },
+    data: { status },
+  });
+}

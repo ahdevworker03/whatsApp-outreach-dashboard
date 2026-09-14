@@ -61,6 +61,30 @@ export async function replyToInbox(req: Request, res: Response): Promise<void> {
   res.status(200).json(sentMessage);
 }
 
+// PATCH /api/v1/inbox/:conversation_id/status — docs/architecture/
+// 05-api-design.md section 6 ("Mark conversation as CLOSED"). This step's
+// documented scope is the CLOSED transition specifically, not the full
+// ConversationStatus enum (unlike campaign.controller.ts's status endpoint,
+// which accepts any campaign status) — a status other than "CLOSED" is
+// rejected here as invalid for this endpoint, per the milestone doc's Step 4
+// objective and its "no automatic re-opening logic here" exclusion.
+export async function updateInboxStatus(req: Request, res: Response): Promise<void> {
+  const { conversation_id } = req.params;
+  if (!UUID_PATTERN.test(conversation_id)) {
+    res.status(400).json({ error: `Invalid conversation id: ${conversation_id}` });
+    return;
+  }
+
+  const { status } = req.body ?? {};
+  if (status !== "CLOSED") {
+    res.status(400).json({ error: `Invalid status: ${status}. Only "CLOSED" is accepted here.` });
+    return;
+  }
+
+  const conversation = await inboxService.closeConversation(conversation_id);
+  res.status(200).json(conversation);
+}
+
 function parsePositiveInt(value: unknown): number | undefined {
   if (typeof value !== "string") {
     return undefined;
