@@ -325,6 +325,8 @@ Every DB-level claim in M4's stated acceptance holds: the campaign is created an
 **Result**
 Complete. Every claim in M4's stated acceptance criteria is verified via direct database inspection: a campaign can be created and activated (Step 1/2); sending the initial template to a lead updates its status and creates a message record (this step, and Step 5); the daily limit is enforced and not exceeded (Step 4). The human visual check confirms the delivered message itself is correct, closing the one gap DB/HTTP verification couldn't reach.
 
+**Carried-forward note (2026-09-14, during M5 Step 4):** the `Message` row referenced above (`id: 0ff8fad3-3ebc-4c6f-83fc-e888a6402826`) was accidentally deleted by a bug in an M5 verification script's cleanup (a blanket `deleteMany` scoped only by `lead_id`, which caught this row too instead of just the rows that script created). It was reconstructed immediately afterward with `id`, `lead_id`, `campaign_id`, `direction`, `type`, `status`, `meta_message_id`, and `sent_at` all set exactly to the originally-recorded values above; `content` was regenerated via the exact same pure function (`messages.service.ts`'s `renderMessageContent`) with the same inputs the original send used, so it's exact by construction. The one field not held exactly: `created_at` was not captured before the deletion, so it was set equal to `sent_at` as the closest known-accurate stand-in rather than left at a fresh `now()` (which would have been further off) — in the original row these two timestamps were independently generated moments apart in the same request, so this is a close but not certainly exact match.
+
 ---
 
 ## Milestone Checklist
