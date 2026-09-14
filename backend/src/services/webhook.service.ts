@@ -1,4 +1,6 @@
 import * as repo from "../repositories/webhook.repository";
+import * as settingsRepo from "../repositories/settings.repository";
+import { detectAutoReply } from "../lib/autoReplyDetector";
 
 interface IncomingMessage {
   from: string;
@@ -15,8 +17,11 @@ interface StatusUpdate {
   recipient_id: string;
 }
 
-// M2 scope only: persist the message/lead/conversation. Auto-reply detection,
-// follow-up scheduling, and real campaign assignment are M4/M5.
+// M2 persists the message/lead/conversation. M5 Step 1 adds auto-reply
+// detection (setting is_auto_reply on the inbound row). M5 Step 2 adds
+// stop-on-human-reply: a genuine (non-auto) reply stops the remaining
+// follow-up sequence and moves the lead to REPLIED, at any stage. Real
+// campaign assignment beyond the M2 placeholder is still out of scope here.
 export async function handleIncomingMessage(message: IncomingMessage) {
   // Meta delivers webhooks at-least-once — a redelivered event must not
   // create a second row (code-review finding, M2 Step 5).
@@ -27,7 +32,23 @@ export async function handleIncomingMessage(message: IncomingMessage) {
 
   const phone = message.from.startsWith("+") ? message.from : `+${message.from}`;
   const lead = await repo.upsertLeadByPhone(phone);
-  await repo.upsertConversationForLead(lead.id);
+
+  // M5 Step 1: settings.auto_reply_patterns may not exist yet (the settings
+  // table isn't seeded as of this milestone — see settings.repository.ts) —
+  // treat a missing row the same as an empty pattern list, which
+  // detectAutoReply already fails safe on (never classifies as auto-reply).
+  const settings = await settingsRepo.getSettings();
+  const isAutoReply = detectAutoReply(message.text?.body ?? "", settings?.autoReplyPatterns ?? []);
+
+  // M5 Step 2: a genuine human reply (isAutoReply === false) stops the
+  // remaining follow-up sequence — no partial/soft-stop, per this step's
+  // Scope — and moves the lead to REPLIED regardless of its current stage.
+  // A detected auto-reply does neither: it must not stop a running sequence
+  // and must not touch lead status (this step's acceptance criteria).
+  await repo.upsertConversationForLead(lead.id, { stopAutomation: !isAutoReply });
+  if (!isAutoReply) {
+    await repo.markLeadReplied(lead.id);
+  }
 
   const campaign = await repo.findAnyCampaign();
   if (!campaign) {
@@ -42,6 +63,7 @@ export async function handleIncomingMessage(message: IncomingMessage) {
     campaignId: campaign.id,
     metaMessageId: message.id,
     content: message.text?.body ?? "",
+    isAutoReply,
   });
 }
 
