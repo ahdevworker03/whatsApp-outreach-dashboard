@@ -12,6 +12,11 @@ export interface SendTemplateMessageInput {
   components?: TemplateComponent[];
 }
 
+export interface SendTextMessageInput {
+  to: string;
+  body: string;
+}
+
 export interface MetaSendMessageResponse {
   messaging_product: "whatsapp";
   contacts: Array<{ input: string; wa_id: string }>;
@@ -63,6 +68,45 @@ export async function sendTemplateMessage(
         language: { code: input.languageCode },
         ...(input.components ? { components: input.components } : {}),
       },
+    }),
+  });
+
+  const body = await response.json();
+
+  if (!response.ok) {
+    throw new MetaApiError(response.status, body as MetaApiErrorBody);
+  }
+
+  return body as MetaSendMessageResponse;
+}
+
+/**
+ * Sends one free-text (non-template) WhatsApp message via the Meta Cloud
+ * API. A distinct call shape from sendTemplateMessage() — `type: "text"`
+ * plus a `text.body`, not a `template` variant (confirmed M6 Step 0) — so
+ * this is a sibling function, not a parameter added to the one above.
+ *
+ * This is a thin wrapper only: it does not check the 24-hour customer
+ * service window. That's a business rule, enforced by the inbox service
+ * layer (M6 Step 3), not this low-level client (M6 Step 2's Explicit
+ * exclusions).
+ */
+export async function sendTextMessage(
+  input: SendTextMessageInput
+): Promise<MetaSendMessageResponse> {
+  const url = `https://graph.facebook.com/${env.metaApiVersion}/${env.metaPhoneNumberId}/messages`;
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.metaAccessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      messaging_product: "whatsapp",
+      to: input.to,
+      type: "text",
+      text: { body: input.body },
     }),
   });
 

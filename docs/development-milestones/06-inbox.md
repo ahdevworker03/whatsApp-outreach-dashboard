@@ -138,7 +138,22 @@ No 24-hour window check in this step — that belongs in the service layer (Step
 One real send to +96171819509 (or the current test number in use), confirmed received.
 
 **Result**
-To be filled in during implementation.
+
+Added `sendTextMessage()` to `backend/src/lib/metaClient.ts` as an additive sibling of `sendTemplateMessage()` — same request envelope (`messaging_product`, `to`, auth header, endpoint), swapping `type: "template"` + `template` for `type: "text"` + `text: { body }`, per Step 0's confirmed request shape. Same `MetaApiError` error-handling path (non-2xx response → thrown `MetaApiError(status, body)`). No 24-hour window check added here — stays a thin wrapper, per this step's Explicit exclusions; that logic belongs in Step 3's service layer.
+
+`npm run build` passes clean.
+
+**Verification:** a one-off throwaway script (deleted after use, per its own docstring) called `sendTextMessage({ to: "+96171819509", body: ... })` against the live Meta Cloud API. Succeeded:
+
+```json
+{
+  "messaging_product": "whatsapp",
+  "contacts": [{ "input": "+96171819509", "wa_id": "96171819509" }],
+  "messages": [{ "id": "wamid.HBgLOTYxNzE4MTk1MDkVAgARGBI5Q0FDNzFCNkEzOTE0Mjc0MUUA" }]
+}
+```
+
+Note: the very first attempt in this sandboxed dev shell hit a connect timeout. Investigated before accepting that as sandbox noise rather than a code issue: retried the identical request (same URL, headers, body, no sandbox override) and it succeeded outright; separately confirmed `curl` and Node `fetch` behave identically against this host with no sandbox override (both succeed). So it was a one-off, non-reproducible first-connection hiccup in this dev shell's outbound path — not Node-specific, not host-specific, not anything about `sendTextMessage()`'s request shape (identical headers/timeout/proxy config to `sendTemplateMessage()`, which has sent real messages without issue since M1). Sandbox-only; not expected to recur on the M8 VPS, and nothing in `metaClient.ts` needs a change.
 
 ---
 
@@ -213,7 +228,7 @@ To be filled in during implementation.
 
 - [x] Step 0 — Inspect Existing Send Path and Confirm the 24-Hour Window Mechanics
 - [x] Step 1 — Inbox Repository and List/Detail Endpoints
-- [ ] Step 2 — Free-Text Send in metaClient.ts
+- [x] Step 2 — Free-Text Send in metaClient.ts
 - [ ] Step 3 — Manual Reply Endpoint with 24-Hour Window Enforcement
 - [ ] Step 4 — Mark Conversation Closed
 - [ ] Step 5 — End-to-End Inbox Verification
