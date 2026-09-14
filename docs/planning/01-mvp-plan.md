@@ -12,7 +12,7 @@ This backlog tracks implementation progress milestone by milestone, in risk-firs
 | M2: Backend Foundation and Data Model | DONE | PostgreSQL, Prisma schema/migration, client singleton, and webhook persistence all in place; a placeholder campaign row stands in for real campaign assignment until M4. See docs/development-milestones/02-backend-foundation-data-model.md. |
 | M3: Lead Management and Excel/CSV Import | DONE | Lead import (CSV/Excel), validation, dedup, and full CRUD API complete and verified end-to-end against the real dev database. API access control middleware, phone normalization, and file parsing all built from scratch this milestone. See docs/development-milestones/03-lead-management-import.md. |
 | M4: Campaign and Outbound Messaging | DONE | Campaign create/activate, initial template send (lead status update + message record), and daily limit enforcement all implemented and verified end-to-end against the real dev database, including a real, visually confirmed WhatsApp send. See docs/development-milestones/04-campaign-outbound-messaging.md. |
-| M5: Follow-up Automation | NOT STARTED | |
+| M5: Follow-up Automation | DONE | Scheduler, follow-up #1/#2 send logic, auto-reply detection, and stop-on-human-reply logic all implemented and verified end-to-end against the real dev database, including real Meta Cloud API sends for both the no-reply and reply-driven paths. Known limitation, disclosed not fixed: a process crash between a follow-up's Meta send succeeding and its status write landing can theoretically cause a duplicate send — accepted for MVP scale, not closed. See docs/development-milestones/05-followup-automation.md. |
 | M6: Inbox | NOT STARTED | |
 | M7: Frontend | NOT STARTED | |
 | M8: VPS Deployment | NOT STARTED | |
@@ -62,5 +62,5 @@ Acceptance: the app is reachable over HTTPS; the webhook URL is reachable by Met
 
 ### M9: End-to-End Verification and Handover
 Goal: confirm the full MVP works end-to-end with real data before final handover.
-Steps: run the full workflow with real leads in production, verify acceptance criteria from all prior milestones, final client review, remaining payment, handover.
+Steps: run the full workflow with real leads in production, verify acceptance criteria from all prior milestones, confirm the M5 crash-window double-send gap remains an accepted, disclosed limitation before handover — not silently forgotten, final client review, remaining payment, handover.
 Acceptance: a real campaign run completes successfully end-to-end in production; the client confirms acceptance of the MVP.

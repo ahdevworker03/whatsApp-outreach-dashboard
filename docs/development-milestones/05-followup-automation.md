@@ -237,7 +237,18 @@ Verification only, using short artificial delays (e.g. seconds/minutes, not real
 Matches M5's stated acceptance in `01-mvp-plan.md`, confirmed via direct DB inspection at each stage transition, not just a final-state check.
 
 **Result**
-To be filled in during implementation.
+Complete, scoped per user direction to the two "stop behavior" scenarios only — the full no-reply `CONTACTED → FOLLOWUP_1_SENT → FOLLOWUP_2_SENT → COMPLETED` chain was not re-run here, since Step 3's `verify-followup-scheduler.ts` already proved that state machine end-to-end with real sends against seeded leads; this step only needed to prove the *entry-point wiring* — that a real `sendInitialTemplate()` call, a real webhook-simulated reply, and a real scheduler run correctly hand off to each other — not re-prove the state machine itself.
+
+Added `scripts/verify-e2e-stop-behaviors.ts`, chaining `messages.service.ts`'s `sendInitialTemplate()` → `webhook.service.ts`'s `handleIncomingMessage()` → `followup.service.ts`'s `processDueFollowups()` through their real entry points (not each one's internals in isolation, which is what Steps 1-3's own scripts already covered). Reused the real ACTIVE placeholder campaign (`a07a1643-...`, same precedent as M4's `verify-real-send.ts`) and the same real, allow-listed test recipient (`+96171819509`) used throughout M1/M4/M5 — confirmed with the user before running (3 real Meta Cloud API sends total, scoped down from an initially-proposed 6 after the user opted to skip re-running the full no-reply chain).
+
+**Incident during this step, disclosed in full:** an earlier version of this script's cleanup used `prisma.message.deleteMany({ where: { leadId } })`, which deleted a real row it did not create — the M4 verification message (`id: 0ff8fad3-3ebc-4c6f-83fc-e888a6402826`) deliberately left in place per `04-campaign-outbound-messaging.md` Step 6. Caught immediately via a failed assertion and a direct `psql` re-check. Per the user's direction: the row was recreated with `id`, `lead_id`, `campaign_id`, `direction`, `type`, `status`, `meta_message_id`, and `sent_at` set exactly to the originally-captured values, and `content` regenerated via the same pure function (`renderMessageContent`) with the same inputs — exact by construction. `created_at` was not captured before the deletion and was set equal to `sent_at` as the closest known-accurate stand-in; this is noted as a carried-forward item in `04-campaign-outbound-messaging.md`'s Step 6 Result. The script's cleanup was then rewritten to track every row it creates by id (`createdMessageIds`/`createdConversationIds`, pushed to the moment each row is created) and delete strictly `{ id: { in: trackedIds } }` on every exit path, success or failure — never a bare `where: { leadId }` again. The corrected `finally` block and tracked-ids setup were shown to the user verbatim before this script was allowed to touch the real number again.
+
+**Verification (`scripts/verify-e2e-stop-behaviors.ts`, against the real dev DB and the real Meta Cloud API, all created rows tracked and deleted strictly by id, the real lead restored to its original state, confirmed via direct `psql` re-query matching the pre-run snapshot exactly):**
+
+- **Scenario B — initial send → human reply → sequence stops**: real `sendInitialTemplate()` call (real Meta send, real `wamid.`) moved the lead to `CONTACTED` with `followup1_due_at` set; a webhook-simulated human reply (no `auto_reply_patterns` seeded, so unambiguously human) moved it to `REPLIED` and set `conversations.automation_stopped: true`; pushing `followup1_due_at` into the past and running `processDueFollowups()` sent nothing — confirmed by comparing the lead's message set against a pre-run snapshot, not an absolute count (the fix that came out of the incident above).
+- **Scenario C — initial send → auto-reply → sequence continues**: a settings row was seeded with `auto_reply_patterns: ["out of office"]`; a real `sendInitialTemplate()` call moved the lead to `CONTACTED`; a webhook-simulated auto-reply matching the pattern left `status` untouched (still `CONTACTED`) and `automation_stopped: false`, with the inbound message correctly marked `is_auto_reply: true`; pushing `followup1_due_at` into the past and running `processDueFollowups()` sent a real Follow-up #1 (real Meta send, real `wamid.`), moving the lead to `FOLLOWUP_1_SENT` with `followup2_due_at` set — confirming the auto-reply did not stop the sequence.
+
+`rm -rf dist && npm run build` — 0 errors. `rm -rf dist && npm test` — 30/30 passing, unchanged (no new pure-logic function; this step is Prisma/Meta/webhook-touching orchestration, verified above per `docs/rules/testing.md`).
 
 ---
 
@@ -247,4 +258,4 @@ To be filled in during implementation.
 - [x] Step 1 — Conversation Creation and Auto-Reply Detection
 - [x] Step 2 — Stop-on-Human-Reply Logic
 - [x] Step 3 — Scheduler and Follow-up Send Logic
-- [ ] Step 4 — End-to-End Automation Verification
+- [x] Step 4 — End-to-End Automation Verification
