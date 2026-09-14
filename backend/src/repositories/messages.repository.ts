@@ -42,3 +42,29 @@ export function createOutboundTemplateMessage(data: NewOutboundMessageInput) {
     },
   });
 }
+
+export interface FailedOutboundMessageInput {
+  leadId: string;
+  campaignId: string;
+  content: string;
+  failedAt: Date;
+}
+
+// M5 Step 3: a follow-up send that fails at the Meta call itself (MetaApiError
+// or any other rejection) still needs a message row — "delivery failure →
+// FAILED" (docs/architecture/04-database-design.md section 4) applies to the
+// message as well as the lead, and there's no metaMessageId to record since
+// Meta never accepted the request.
+export function createFailedOutboundTemplateMessage(data: FailedOutboundMessageInput) {
+  return prisma.message.create({
+    data: {
+      leadId: data.leadId,
+      campaignId: data.campaignId,
+      direction: "OUTBOUND",
+      type: "TEMPLATE",
+      content: data.content,
+      status: "FAILED",
+      failedAt: data.failedAt,
+    },
+  });
+}

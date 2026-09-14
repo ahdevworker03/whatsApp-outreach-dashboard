@@ -53,7 +53,10 @@ const TEST_ORDER_NUMBER = "TEST-0000";
 const TEST_ESTIMATED_DELIVERY = "N/A (test send, no real order exists)";
 const FALLBACK_LEAD_NAME = "there";
 
-function buildTestTemplateComponents(leadName: string | null): TemplateComponent[] {
+// Exported for followup.service.ts (M5 Step 3) to reuse for follow-up sends
+// against the same stand-in template — see docs/rules/backend.md and
+// coding-standards.md's "reuse existing code" rule.
+export function buildTestTemplateComponents(leadName: string | null): TemplateComponent[] {
   const name = leadName?.trim() || FALLBACK_LEAD_NAME;
   return [
     {
@@ -72,7 +75,7 @@ function buildTestTemplateComponents(leadName: string | null): TemplateComponent
 // specify a format for outbound TEMPLATE content, so this is the most literal
 // non-invented choice: name the template and the variables substituted into
 // it, clearly marked as test values).
-function renderMessageContent(templateName: string, leadName: string | null): string {
+export function renderMessageContent(templateName: string, leadName: string | null): string {
   const name = leadName?.trim() || FALLBACK_LEAD_NAME;
   return (
     `Template: ${templateName} | Variables: name="${name}", ` +

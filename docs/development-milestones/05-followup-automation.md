@@ -194,7 +194,34 @@ Steps 1 and 2 (the scheduler must check `automation_stopped` before every send).
 - Confirm scheduler does not double-send if run twice against the same due lead (idempotency check — a real risk with interval-based polling if a job run takes longer than the interval, or if the process restarts mid-cycle).
 
 **Result**
-To be filled in during implementation.
+Complete.
+
+- Installed `node-cron` (no other new dependency — its published types are bundled, no `@types/node-cron` needed).
+- Added `src/repositories/followup.repository.ts`: `findLeadsDueForFollowup1`/`findLeadsDueForFollowup2` (status + due-date + `automation_stopped` filter, expressed directly in the Prisma `where` — a lead with no `conversations` row is treated the same as one with `automationStopped: false`, both meaning "nothing has stopped this sequence"), `markLeadFollowup1Sent`, `markLeadFollowup2Sent`, `markLeadCompleted`, `markLeadFailed`.
+- Added `src/repositories/messages.repository.ts`'s `createFailedOutboundTemplateMessage` (a failed send still gets a message row — `status: FAILED`, `failedAt`, no `metaMessageId`).
+- Exported `buildTestTemplateComponents`/`renderMessageContent` from `messages.service.ts` for reuse (avoids duplicating the stand-in-template variable-substitution logic per `docs/rules/coding-standards.md`'s "reuse existing code" rule).
+- Added `src/services/followup.service.ts`'s `processDueFollowups()`: for each due lead (Follow-up #1 leads, then Follow-up #2 leads), checks the shared daily-limit guard (`messages.repository.ts`'s `countTodaysOutboundMessages`, same function `sendInitialTemplate` uses), sends via `metaClient.ts`, and on success advances the lead's status/due-dates; on a Meta send failure, records a `FAILED` message and sets `LeadStatus.FAILED` (no retry/reschedule, per this step's Explicit exclusions). Every per-lead step is wrapped so one lead's failure can't stop the run from reaching the rest — `src/jobs/followupScheduler.ts` (below) adds a second safety net at the whole-run level. **Interpretive decision** (flagged, not invented): on a successful Follow-up #2 send, the lead is written to `FOLLOWUP_2_SENT` and then immediately to `COMPLETED` in the same call — two sequential writes, matching this step's acceptance criteria wording ("moves to FOLLOWUP_2_SENT, then COMPLETED") — since neither the contract nor `04-database-design.md` states the trigger moment explicitly.
+- Added `src/jobs/followupScheduler.ts`: `node-cron` schedule, proposed default `*/15 * * * *` (every 15 minutes, flagged as a proposed default per this step's Scope, not a hard requirement anywhere in the docs). Uses `node-cron`'s `noOverlap: true` option (confirmed via Context7 docs) as the idempotency guard against a run overlapping a still-in-progress previous run; `execution:failed`/`execution:overlap` listeners log per `03-backend-architecture.md` section 8 ("Scheduler job failures are logged per job and do not stop the scheduler"). Started from `src/index.ts` alongside `app.listen`.
+- Confirmed with the user before running (outward-facing, real Meta API calls): reuse `jaspers_market_order_confirmation_v1` as the follow-up template (already set as `campaign.followup1TemplateId`/`followup2TemplateId` on every campaign row, including the M4 placeholder — no separate demo template exists), and proceed with real sends to the same test recipient used in M1/M4 (`+96171819509`).
+
+**Verification (`scripts/verify-followup-scheduler.ts`, against the real dev DB, real Meta Cloud API calls where noted, all created rows cleaned up and the pre-existing real lead restored to its original state afterward — confirmed via direct `psql` re-query matching the pre-run snapshot exactly):**
+
+1. **Due-leads query correctness** (DB-only, no Meta calls): seeded a due CONTACTED lead, a not-yet-due CONTACTED lead, a due-but-`automation_stopped` CONTACTED lead, a due FOLLOWUP_1_SENT lead, and a due-but-`automation_stopped` FOLLOWUP_1_SENT lead — `findLeadsDueForFollowup1`/`findLeadsDueForFollowup2` included exactly the two truly-eligible leads and excluded the other three.
+2. **Daily limit respected, shared guard**: a dedicated campaign with `dailyLimit: 1` and one filler message already "sent today" — `processDueFollowups()` skipped the due lead entirely (`skippedDailyLimit: 1`, zero new message rows, lead status untouched). Raising the limit and rerunning sent it for real — **real Meta send #1** to `+96171819509`, confirmed via a real `wamid.` id, lead moved to `FOLLOWUP_1_SENT` with `followup2DueAt` set.
+3. **Failed send sets FAILED**: a due lead with a deliberately invalid recipient number — **real Meta call**, rejected by Meta itself (`#131030 Recipient phone number not in allowed list`) — confirmed the failure path end-to-end: `MessageStatus.FAILED` (no `metaMessageId`, `failedAt` set) and `LeadStatus.FAILED`, no retry attempted.
+4. **No double-send across two non-overlapping runs**: rerunning `processDueFollowups()` immediately after, with no lead newly due, created zero additional message rows — confirms a lead's own status transition out of the eligibility window prevents a resend on a subsequent, non-overlapping run. This is **not** a full idempotency guarantee — see the Known Limitation below.
+
+5. **Follow-up #2 end-to-end**: pushed the same lead's `followup2_due_at` into the past — **real Meta send #2** to `+96171819509`, confirmed via a real `wamid.` id, lead moved to `FOLLOWUP_2_SENT` then `COMPLETED` (final DB state `COMPLETED`, per this step's interpretive decision above).
+
+`rm -rf dist && npm run build` — 0 errors. `rm -rf dist && npm test` — 30/30 passing, unchanged (no new pure-logic function; this step is Prisma/Meta-touching orchestration, verified above per `docs/rules/testing.md`, not a new `vitest` file).
+
+**Known limitation — carried forward, not fixed in M5 (flagged during review, deliberately not closed):**
+
+`sendFollowup()` in `followup.service.ts` calls Meta *before* writing the lead's status/due-date advance (`sendTemplateMessage()` → `createOutboundTemplateMessage()` → `markLeadFollowup1Sent`/`markLeadFollowup2Sent`+`markLeadCompleted`, in that order). **If the process crashes or is killed between the Meta call succeeding and that status write landing, the lead is left exactly as it was before the send** (still `CONTACTED`/`FOLLOWUP_1_SENT`, due-date still in the past) — indistinguishable from "never attempted." The next scheduler tick will pick it up and send it again for real. This is a genuine duplicate-send risk, not just a theoretical one.
+
+`node-cron`'s `noOverlap: true` does **not** close this gap — it only prevents two cron *fires* from running concurrently in time. It does nothing for a crash that happens between two separate, non-overlapping runs, which is exactly the scenario above. Check 4's verification above confirms the weaker, correct claim only: no double-send across two clean, non-overlapping runs with no crash in between. Crash-recovery between a successful Meta call and the status write landing is **not tested and not guaranteed** — this was previously reported as "idempotency confirmed" without that caveat, which overstated what was actually verified; corrected here.
+
+**Why not fixed now**: closing this properly needs a claim/lock mechanism (e.g. writing an intermediate "sending" state or claiming the lead *before* calling Meta) — that requires a schema change (`docs/architecture/04-database-design.md` must be updated first, per `docs/rules/database.md`) plus its own failure-mode handling (what happens if the claim write itself fails, or a claimed-but-never-resolved lead needs manual recovery). At this project's actual scale (~150 leads/day, one possible duplicate WhatsApp message in a rare crash-timing scenario), that cost is disproportionate to the risk. Flagging this for `04-database-design.md`'s later consideration if load or reliability requirements change — not addressing it before then.
 
 ---
 
@@ -219,5 +246,5 @@ To be filled in during implementation.
 - [x] Step 0 — Inspect Current Webhook and Conversation State
 - [x] Step 1 — Conversation Creation and Auto-Reply Detection
 - [x] Step 2 — Stop-on-Human-Reply Logic
-- [ ] Step 3 — Scheduler and Follow-up Send Logic
+- [x] Step 3 — Scheduler and Follow-up Send Logic
 - [ ] Step 4 — End-to-End Automation Verification

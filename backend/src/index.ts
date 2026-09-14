@@ -3,6 +3,7 @@ import { env } from "./config/env";
 import { errorHandler } from "./middleware/errorHandler";
 import { v1Router } from "./routes/v1.routes";
 import { whatsappWebhookRouter } from "./webhooks/whatsapp.routes";
+import { startFollowupScheduler } from "./jobs/followupScheduler";
 
 const app = express();
 
@@ -20,3 +21,5 @@ app.use(errorHandler);
 app.listen(env.port, () => {
   console.log(`Backend listening on port ${env.port} (${env.nodeEnv})`);
 });
+
+startFollowupScheduler();
