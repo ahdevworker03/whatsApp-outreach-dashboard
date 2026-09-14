@@ -7,6 +7,17 @@ import {
   UnsupportedLeadFileTypeError,
 } from "../services/leads.service";
 import { InvalidPhoneNumberError } from "../lib/phone";
+import {
+  AnotherCampaignActiveError,
+  CampaignActiveError,
+  CampaignNotFoundError,
+} from "../services/campaigns.service";
+import {
+  DailyLimitReachedError,
+  LeadNotEligibleError,
+  NoActiveCampaignError,
+} from "../services/messages.service";
+import { MetaApiError } from "../lib/metaClient";
 
 // Global Express error handler per docs/architecture/03-backend-architecture.md:
 // catches unhandled errors and returns a consistent JSON error response.
@@ -41,6 +52,37 @@ export function errorHandler(
   }
   if (err instanceof MulterError) {
     res.status(400).json({ error: err.message, code: err.code });
+    return;
+  }
+
+  // Campaign domain errors (M4 Step 1/2).
+  if (err instanceof CampaignNotFoundError) {
+    res.status(404).json({ error: err.message });
+    return;
+  }
+  if (err instanceof CampaignActiveError || err instanceof AnotherCampaignActiveError) {
+    res.status(409).json({ error: err.message });
+    return;
+  }
+
+  // Messaging/send domain errors (M4 Step 4/5).
+  if (err instanceof NoActiveCampaignError) {
+    res.status(409).json({ error: err.message });
+    return;
+  }
+  if (err instanceof DailyLimitReachedError) {
+    res.status(429).json({ error: err.message });
+    return;
+  }
+  if (err instanceof LeadNotEligibleError) {
+    res.status(409).json({ error: err.message });
+    return;
+  }
+  // The Meta Cloud API itself rejected/failed the send (e.g. bad/expired
+  // token, invalid template, unreachable recipient) — a real upstream
+  // failure, not a bug in this backend, so 502 rather than a generic 500.
+  if (err instanceof MetaApiError) {
+    res.status(502).json({ error: `Meta Cloud API request failed: ${err.message}` });
     return;
   }
 

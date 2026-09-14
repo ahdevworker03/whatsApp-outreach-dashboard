@@ -69,6 +69,19 @@ export function listLeads(params: ListLeadsParams) {
   ]);
 }
 
+// "Eligible to be contacted" (M4 Step 3): imported but never assigned to any
+// campaign yet. Per docs/architecture/04-database-design.md's LeadStatus enum,
+// NEW is "imported, not yet contacted" and campaignId is only ever set once a
+// lead is assigned to a campaign's send flow (Step 5) — so NEW + campaignId
+// null is the literal, non-invented definition of "eligible" available from
+// the existing schema, not a new business rule.
+export function findEligibleLeads() {
+  return prisma.lead.findMany({
+    where: { status: "NEW", campaignId: null },
+    orderBy: { createdAt: "asc" },
+  });
+}
+
 export function findLeadById(id: string) {
   return prisma.lead.findUnique({
     where: { id },
@@ -78,4 +91,15 @@ export function findLeadById(id: string) {
 
 export function deleteLeadById(id: string) {
   return prisma.lead.delete({ where: { id } });
+}
+
+// M4 Step 5: after the initial template send succeeds, assign the lead to
+// the sending campaign, move it out of NEW, and schedule follow-up #1 per
+// the campaign's followup1DelayHours (docs/architecture/04-database-design.md:
+// "followup1_due_at — set when initial template is sent").
+export function markLeadContacted(id: string, campaignId: string, followup1DueAt: Date) {
+  return prisma.lead.update({
+    where: { id },
+    data: { status: "CONTACTED", campaignId, followup1DueAt },
+  });
 }
