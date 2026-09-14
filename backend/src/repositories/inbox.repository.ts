@@ -1,9 +1,10 @@
 import { ConversationStatus, Prisma } from "@prisma/client";
 import { prisma } from "../prisma/client";
 
-// Read-only persistence for the Inbox's list/detail endpoints (M6 Step 1).
-// Manual reply (Step 3) and status transitions (Step 4) add write paths here
-// later; this file only reads what M5's webhook path already writes.
+// Persistence for the Inbox domain. M6 Step 1 added the read-only list/detail
+// queries; Step 3 adds the manual-reply write path (an outbound TEXT message
+// plus the conversation's last_message_at). Status transitions (Step 4) add
+// a further write path later.
 
 export interface ListConversationsParams {
   status?: ConversationStatus;
@@ -42,5 +43,82 @@ export function findConversationById(id: string) {
         include: { messages: { orderBy: { createdAt: "asc" } } },
       },
     },
+  });
+}
+
+// Lighter than findConversationById — the reply flow needs the lead's phone
+// and campaignId, not the full message history.
+export function findConversationWithLead(id: string) {
+  return prisma.conversation.findUnique({
+    where: { id },
+    include: { lead: true },
+  });
+}
+
+// The 24-hour customer service window is anchored to the customer's most
+// recent INBOUND message (M6 Step 0's finding, confirmed against Meta's own
+// rule) — not conversations.last_message_at, which moves on outbound sends
+// too once this function's caller starts writing OUTBOUND rows. INBOUND rows
+// never set sentAt (see webhook.repository.ts's createInboundMessage), so
+// createdAt is the only usable timestamp here.
+export function findMostRecentInboundMessage(leadId: string) {
+  return prisma.message.findFirst({
+    where: { leadId, direction: "INBOUND" },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export interface NewOutboundTextMessageInput {
+  leadId: string;
+  campaignId: string;
+  content: string;
+  metaMessageId: string;
+  sentAt: Date;
+}
+
+export function createOutboundTextMessage(data: NewOutboundTextMessageInput) {
+  return prisma.message.create({
+    data: {
+      leadId: data.leadId,
+      campaignId: data.campaignId,
+      direction: "OUTBOUND",
+      type: "TEXT",
+      content: data.content,
+      status: "SENT",
+      metaMessageId: data.metaMessageId,
+      sentAt: data.sentAt,
+    },
+  });
+}
+
+export interface FailedOutboundTextMessageInput {
+  leadId: string;
+  campaignId: string;
+  content: string;
+  failedAt: Date;
+}
+
+// Mirrors messages.repository.ts's createFailedOutboundTemplateMessage — a
+// send that fails at the Meta call itself still gets a row ("delivery
+// failure → FAILED", docs/architecture/04-database-design.md section 4),
+// with no metaMessageId since Meta never accepted the request.
+export function createFailedOutboundTextMessage(data: FailedOutboundTextMessageInput) {
+  return prisma.message.create({
+    data: {
+      leadId: data.leadId,
+      campaignId: data.campaignId,
+      direction: "OUTBOUND",
+      type: "TEXT",
+      content: data.content,
+      status: "FAILED",
+      failedAt: data.failedAt,
+    },
+  });
+}
+
+export function updateConversationLastMessageAt(id: string, lastMessageAt: Date) {
+  return prisma.conversation.update({
+    where: { id },
+    data: { lastMessageAt },
   });
 }

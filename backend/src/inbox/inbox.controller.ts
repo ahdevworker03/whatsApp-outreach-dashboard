@@ -40,6 +40,27 @@ export async function getInboxConversation(req: Request, res: Response): Promise
   res.status(200).json(conversation);
 }
 
+// POST /api/v1/inbox/:conversation_id/reply — docs/architecture/
+// 05-api-design.md section 5. Message body presence/shape is request-level
+// validation (docs/rules/backend.md: a controller may resolve this itself);
+// the 24-hour window is a business rule and stays in inbox.service.ts.
+export async function replyToInbox(req: Request, res: Response): Promise<void> {
+  const { conversation_id } = req.params;
+  if (!UUID_PATTERN.test(conversation_id)) {
+    res.status(400).json({ error: `Invalid conversation id: ${conversation_id}` });
+    return;
+  }
+
+  const { message } = req.body ?? {};
+  if (typeof message !== "string" || message.trim().length === 0) {
+    res.status(400).json({ error: "message is required and must be a non-empty string" });
+    return;
+  }
+
+  const sentMessage = await inboxService.replyToConversation(conversation_id, message);
+  res.status(200).json(sentMessage);
+}
+
 function parsePositiveInt(value: unknown): number | undefined {
   if (typeof value !== "string") {
     return undefined;

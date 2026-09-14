@@ -179,7 +179,30 @@ No retry logic on failure — matches the existing pattern (failed send → `Mes
 Real HTTP requests against the real dev DB. Both branches tested: a reply to a conversation with a recent inbound message (within window — real Meta send, real receipt confirmed), and a reply to a conversation whose most recent inbound message is artificially backdated past 24 hours (rejected, confirmed no Meta call was attempted and no message row created).
 
 **Result**
-To be filled in during implementation.
+
+Implemented `POST /api/v1/inbox/:conversation_id/reply` reusing Step 1/2's building blocks:
+
+- `inbox.repository.ts` — `findConversationWithLead()` (lighter than the Step 1 detail query), `findMostRecentInboundMessage(leadId)` (per Step 0: ordered by `createdAt` desc, since INBOUND rows never set `sentAt`), `createOutboundTextMessage()` / `createFailedOutboundTextMessage()` (mirrors `messages.repository.ts`'s template-send pair), `updateConversationLastMessageAt()`.
+- `inbox.service.ts` — `replyToConversation()`: looks up the conversation (404 via `ConversationNotFoundError` if missing), computes the window from the lead's most recent INBOUND message and rejects **before any Meta call** via a new `OutsideCustomerServiceWindowError` (mapped to 409) if it's missing or older than 24h, resolves `campaign_id` from the lead's own campaign (falling back to the same placeholder-campaign lookup the webhook path already uses, for the same required-FK reason), then calls `sendTextMessage()`. On success: `Message` row `OUTBOUND`/`TEXT`/`SENT` with `metaMessageId`+`sentAt`, and `conversations.last_message_at` updated. On failure: a `FAILED` row is written (mirrors `followup.service.ts`'s pattern) and the original error is rethrown so it's never silently dropped — `errorHandler.ts` already maps `MetaApiError` to 502.
+- `inbox.controller.ts` — validates `conversation_id` as a UUID and `message` as a non-empty string at the request level (per `docs/rules/backend.md`: this is request validation, not a business decision) before ever reaching the service.
+- `errorHandler.ts` — added `OutsideCustomerServiceWindowError` → 409.
+
+`npm run build` passes clean.
+
+**Verification:** real HTTP requests via a one-off script (deleted after use) against the real dev DB and the live Meta Cloud API:
+
+- **Within window** (a conversation whose lead has a just-now INBOUND message, using the shared test number +96171819509): reply → 200, `OUTBOUND`/`TEXT`/`SENT` with a real `wamid.*` id, exactly one new `Message` row, `conversations.last_message_at` updated to the send time.
+- **Outside window** (INBOUND message backdated 25h): reply → 409, rejected inside the service before `sendTextMessage()` was ever called (no `MetaApiError` in the logs, only `OutsideCustomerServiceWindowError`), zero new `Message` rows, `last_message_at` untouched — not silently sent, not silently dropped.
+- Empty `{ message: "" }` and missing `message` → 400, both before touching the service.
+- Unknown `conversation_id` → 404.
+
+All checks passed.
+
+**Meta-failure branch (added after review):** the above didn't yet exercise a Meta-side send rejection (only the outside-window pre-emptive rejection, which never reaches `sendTextMessage()`). Verified separately with a within-window conversation whose lead's phone Meta itself rejects (`131030 Recipient phone number not in allowed list` — a real API call, not simulated):
+
+- Client received **502**, not a raw 500 — `{"error":"Meta Cloud API request failed: (#131030) Recipient phone number not in allowed list"}`, confirming `errorHandler.ts`'s existing `MetaApiError` mapping applies unchanged.
+- Exactly one `Message` row was written with `status: FAILED`, `failedAt` set, `metaMessageId: null` — confirming `createFailedOutboundTextMessage()` completes before the error is rethrown, not skipped.
+- `conversations.last_message_at` was untouched by the failed attempt (only written on the success path).
 
 ---
 
@@ -229,6 +252,6 @@ To be filled in during implementation.
 - [x] Step 0 — Inspect Existing Send Path and Confirm the 24-Hour Window Mechanics
 - [x] Step 1 — Inbox Repository and List/Detail Endpoints
 - [x] Step 2 — Free-Text Send in metaClient.ts
-- [ ] Step 3 — Manual Reply Endpoint with 24-Hour Window Enforcement
+- [x] Step 3 — Manual Reply Endpoint with 24-Hour Window Enforcement
 - [ ] Step 4 — Mark Conversation Closed
 - [ ] Step 5 — End-to-End Inbox Verification

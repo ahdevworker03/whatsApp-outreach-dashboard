@@ -18,7 +18,7 @@ import {
   NoActiveCampaignError,
 } from "../services/messages.service";
 import { MetaApiError } from "../lib/metaClient";
-import { ConversationNotFoundError } from "../services/inbox.service";
+import { ConversationNotFoundError, OutsideCustomerServiceWindowError } from "../services/inbox.service";
 
 // Global Express error handler per docs/architecture/03-backend-architecture.md:
 // catches unhandled errors and returns a consistent JSON error response.
@@ -87,9 +87,13 @@ export function errorHandler(
     return;
   }
 
-  // Inbox domain errors (M6 Step 1).
+  // Inbox domain errors (M6 Step 1/3).
   if (err instanceof ConversationNotFoundError) {
     res.status(404).json({ error: err.message });
+    return;
+  }
+  if (err instanceof OutsideCustomerServiceWindowError) {
+    res.status(409).json({ error: err.message });
     return;
   }
 
