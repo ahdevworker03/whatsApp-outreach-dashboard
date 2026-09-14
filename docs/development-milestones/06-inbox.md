@@ -261,7 +261,18 @@ Verification only, no new code expected unless this surfaces a bug.
 Matches M6's stated acceptance in `01-mvp-plan.md` — incoming conversations appear in the inbox with full message history; a manual reply is sent successfully and stored as a message — confirmed via direct database inspection and real HTTP responses together, not either alone.
 
 **Result**
-To be filled in during implementation.
+
+No bugs surfaced; no new application code was needed (verification only, per this step's Scope). Ran one end-to-end script (deleted after use) driving the real `/webhook` and `/api/v1` endpoints together — not the direct `handleIncomingMessage()` shortcut used in earlier steps' scripts — against the real dev DB and the live Meta API, using the shared test number (+96171819509) so the reply branch is a real send, not simulated:
+
+1. **Incoming message** — a real `POST /webhook` payload (Meta's documented shape: `entry[].changes[].value.messages[]`) → 200 immediately, then polled until the async-processed `INBOUND` `Message` row landed (per `05-api-design.md` section 9's "always 200 immediately, process after").
+2. **Appears in `GET /api/v1/inbox`** — the conversation is present in the list.
+3. **`GET .../:id` shows full history** — the new inbound message is in `lead.messages`.
+4. **Manual reply sent within the window** — `POST .../reply` → 200, `status: SENT`, a real `wamid.*` id from Meta.
+5. **Appears in history** — re-fetching the conversation shows the reply as an `OUTBOUND` row, content matching exactly what was sent, chronologically last.
+6. **Mark closed** — `PATCH .../status { status: "CLOSED" }` → 200, confirmed `CLOSED` via both the response and a direct DB query.
+7. **New incoming message reactivates it** — a second real `POST /webhook` inbound message → conversation confirmed back to `ACTIVE` via direct DB query.
+
+All 7 steps passed in one continuous run — both of the milestone's stated acceptance criteria (`01-mvp-plan.md`) are confirmed together, via real HTTP responses and direct DB inspection, not either alone.
 
 ---
 
@@ -272,4 +283,4 @@ To be filled in during implementation.
 - [x] Step 2 — Free-Text Send in metaClient.ts
 - [x] Step 3 — Manual Reply Endpoint with 24-Hour Window Enforcement
 - [x] Step 4 — Mark Conversation Closed
-- [ ] Step 5 — End-to-End Inbox Verification
+- [x] Step 5 — End-to-End Inbox Verification
