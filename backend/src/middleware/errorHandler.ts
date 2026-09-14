@@ -18,6 +18,7 @@ import {
   NoActiveCampaignError,
 } from "../services/messages.service";
 import { MetaApiError } from "../lib/metaClient";
+import { ConversationNotFoundError } from "../services/inbox.service";
 
 // Global Express error handler per docs/architecture/03-backend-architecture.md:
 // catches unhandled errors and returns a consistent JSON error response.
@@ -83,6 +84,12 @@ export function errorHandler(
   // failure, not a bug in this backend, so 502 rather than a generic 500.
   if (err instanceof MetaApiError) {
     res.status(502).json({ error: `Meta Cloud API request failed: ${err.message}` });
+    return;
+  }
+
+  // Inbox domain errors (M6 Step 1).
+  if (err instanceof ConversationNotFoundError) {
+    res.status(404).json({ error: err.message });
     return;
   }
 
