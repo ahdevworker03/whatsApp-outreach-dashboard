@@ -114,7 +114,28 @@ This page only.
 Every guard already proven in M4 (blocked-while-active, only-one-active, daily-limit-reached) surfaces as a clear UI message, not a raw 409/429.
 
 **Result**
-To be filled in during implementation.
+`frontend/src/pages/CampaignPage.tsx`: shows the current campaign (name, status badge, templates, delays, daily limit), an Edit form (disabled while ACTIVE), Activate/Pause, a "Start New Campaign" action, and a single-send section with a lead picker limited to eligible (`status=NEW`) leads. `api.ts` gained `Campaign`/`CampaignFormInput`/`Message` types and a snake_case request-body mapper (`toCampaignRequestBody`) for the two write endpoints, which take snake_case per `05-api-design.md` while everything else in this client is camelCase to match what the backend returns.
+
+Two gaps found and resolved during implementation, not assumed away:
+
+1. **No dedicated "eligible leads" endpoint exists.** `leads.repository.ts`'s `findEligibleLeads` (NEW + `campaignId: null`) is dead code — never wired to any route. Confirmed the invariant instead: `campaignId` is only ever set together with a status transition out of `NEW` (`markLeadContacted`), so `status=NEW` is equivalent to "eligible" under the current schema. Used the existing `GET /api/v1/leads?status=NEW` rather than adding new backend surface for this page. **Re-checked on review**: grepped the whole backend — `findEligibleLeads`'s only callers are itself and `scripts/verify-eligible-leads.ts` (a one-off M4 script bypassing HTTP entirely). Not "two parallel filtering paths" in the live request path — one live path (`GET /leads?status=NEW`) and one function nothing in production calls. **Flagged as a cleanup candidate before M9**: either delete `findEligibleLeads` as dead code, or give it a real route if a future feature needs eligibility semantics that diverge from plain `NEW` (e.g. if `campaignId` is ever set independently of a status change). Not decided here — it's a backend-scope call beyond this page.
+2. **The "only-one-active" guard was initially unreachable through the UI.** `GET /api/v1/campaign` always returns the ACTIVE campaign over any DRAFT, so a page that only ever renders "the current campaign" can never surface a second DRAFT to attempt activating — the guard would exist in the error-handling code but could never actually fire from user action. Added "Start New Campaign" (allowed at any time, matching `campaigns.service.ts`'s own comment that creating a DRAFT while another is ACTIVE is an intentionally supported workflow) which displays the just-created draft directly from the POST response rather than re-querying "current" — making the guard genuinely reachable, with a "View Current Campaign" link back. **This is a scope addition, not originally-planned scope** — Step 3's objective lists "create/edit a DRAFT" but not a second, always-available create action running alongside an already-current campaign; added specifically because the acceptance criteria's "only-one-active ... surfaces as a clear UI message" would otherwise be unverifiable, not because it was asked for up front.
+
+Verified against the real backend, real dev DB, and the real pre-existing "Placeholder (pre-M4)" ACTIVE campaign — all four guards, not just the three named in the acceptance criteria:
+
+- **Blocked-while-active**: `PATCH /campaign/:id` on the ACTIVE campaign → `409 "Campaign ... is ACTIVE and cannot be modified. Pause or archive it first."` The Edit button is preventively disabled while ACTIVE (with an inline hint), and `handleSave`'s catch still surfaces this exact message if reached another way.
+- **Only-one-active**: created a second DRAFT, attempted to activate it while the placeholder stayed ACTIVE → `409 "Campaign ... is already ACTIVE. Pause or archive it before activating another."` — reachable via "Start New Campaign" → Activate, per the fix above.
+- **No-active-campaign**: paused the only ACTIVE campaign, attempted a send → `409 "No campaign is currently ACTIVE. Activate a campaign before sending."`
+- **Daily-limit-reached**: set a test campaign's `daily_limit` to 0 and activated it, attempted a send → `429 "Daily sending limit of 0 messages has been reached for this campaign today."`
+- **Lead-not-eligible** (not named in the acceptance criteria but also guarded by M4): sent to a `REPLIED` lead directly via the API → `409 "Lead ... is not eligible for the initial send (status: REPLIED, expected NEW)."` The UI's own lead picker only lists `NEW` leads, so this specific guard isn't reachable through normal use (the ineligible option is never offered) — a deliberate prevention-over-recovery choice, not an oversight. **Explicitly confirmed this holds even under a race**, not just under normal single-user use: this is a single-user tool (`docs/rules/project.md`'s explicit non-goals — no multi-tenancy, no multiple users), so the realistic race is narrow (e.g. the same person with two open tabs, or the M5 follow-up scheduler changing a lead's status between the picker's fetch and clicking Send), not a genuinely concurrent multi-user scenario. `handleSend`'s catch still displays the exact backend message if that narrow race ever fires — the guard is defensively present, just not reachable through a single linear user action.
+
+All four/five error messages above are the backend's own human-readable text, rendered as-is in an `.alert-error` — no raw JSON or status-code noise. No real Meta API send was triggered: M4 already proved the successful-send path end-to-end, and re-triggering a real send here (the campaign's template targets Meta's sandbox test number) wasn't necessary to prove Step 3's actual acceptance criteria (the guard messages), so it was skipped to avoid unnecessary real-API usage.
+
+State fully restored after testing except one unavoidable artifact: the test campaign created for the only-one-active and daily-limit tests has no delete endpoint (campaigns can't be deleted via the API), so it was set to `ARCHIVED` rather than left `ACTIVE`/`DRAFT` — a harmless leftover row, not a passing/failing concern. The original "Placeholder (pre-M4)" campaign was restored to `ACTIVE`; no lead rows were mutated (every guard test was rejected before reaching Meta, so no lead was ever marked `CONTACTED`).
+
+`npm run build` (tsc + vite) passes with no type errors. As with Step 2, no browser automation tool was available this session — verification here is the same DB/API-level rigor plus a render-path trace, not a screenshot; this page's conditional UI (disabled Edit while ACTIVE, the only-one-active workaround, guard-message alerts) makes that gap more material here than on Step 2, consistent with the standing caveat flagged there.
+
+**Re-checked before Step 4, on request**: searched this session's available tools specifically (`ToolSearch` for "chrome" and "browser screenshot playwright puppeteer") — no general-purpose browser automation tool is connected. Only Figma-specific tools (for `.fig` design files, not a running web app) and `WebFetch` (which explicitly refuses `localhost`) are available. Confirmed, not assumed: there is currently no way to get a real screenshot of this app in this session. Since Step 4 (Inbox) has materially more conditional UI than Campaign, this should be resolved — connect a browser tool, or agree on an alternative concrete visual-verification method — before relying on trace-only verification a third consecutive time.
 
 ---
 
@@ -130,7 +151,81 @@ This page only. Message history clearly distinguishes inbound vs outbound (e.g. 
 The 24-hour-window rejection (M6) surfaces as a clear disabled/warning state in the UI, not a raw 409 after the user tries to send. Meta-failure (502) shows a clear "failed to send" state, matching the `FAILED` message row.
 
 **Result**
-To be filled in during implementation.
+`frontend/src/pages/InboxPage.tsx`: a two-pane layout — a conversation list (status filter, pagination) on the left, and a detail view (`ConversationDetailView`) on the right showing the full message history, a reply box, and Mark Closed. `api.ts` gained `ConversationStatus`/`ConversationListItem`/`ConversationDetail` types and `closeConversation` (typed to send only `"CLOSED"`, matching `inbox.controller.ts`'s own restriction — the endpoint 400s on anything else, confirmed below).
+
+No visual tool was available this session (re-confirmed on request — `ToolSearch` for "playwright"/"chrome"/"screenshot" returns nothing usable for a running web app). Per the tightened approach, each conditional branch below is the literal code, not a paraphrase, checked against real API responses fetched in this session.
+
+**1. 24-hour-window disabled/warning state.** Computed client-side, mirroring `inbox.service.ts`'s own rule exactly (anchored to the most recent INBOUND message, not `lastMessageAt`):
+```ts
+function isWithinCustomerServiceWindow(messages: Message[]): boolean {
+  const lastInbound = [...messages].reverse().find((m) => m.direction === 'INBOUND')
+  if (!lastInbound) return false
+  return Date.now() - new Date(lastInbound.createdAt).getTime() < CUSTOMER_SERVICE_WINDOW_MS
+}
+```
+rendered by:
+```tsx
+{withinWindow ? (
+  <form onSubmit={handleReply} className="reply-box">...</form>
+) : (
+  <div className="alert alert-warning">
+    Outside the 24-hour customer service window — no inbound message from this lead in the last 24 hours. A free-text reply cannot be sent.
+  </div>
+)}
+```
+Traced against two real conversations, not synthetic data: conversation `a40b3c26...` (lead `+16315551182`)'s most recent inbound message is `2026-09-12T15:16:30.646Z`; at verification time (`2026-09-15T12:41:47Z`) that's ~69 hours old → `isWithinCustomerServiceWindow` returns `false` → the warning branch renders. This matches the real `409` the backend gives for the same conversation (verified via direct `POST .../reply` → `"...outside the 24-hour customer service window..."`, `HTTP 409`). Conversation `7139bffe...` (lead `+96171819509`)'s most recent inbound message is `2026-09-14T16:01:49.394Z` — ~20h40m old at verification time → returns `true` → the form branch renders instead.
+
+**2. Meta-failure (502) "failed to send" state.** Two code paths, both traced against a real failure, not assumed:
+```tsx
+async function handleReply(e: React.FormEvent) {
+  ...
+  try {
+    await api.replyToConversation(conversationId, replyText)
+    setReplyText('')
+  } catch (err) {
+    setReplyError(err instanceof ApiError ? err.message : (err as Error).message)
+  } finally {
+    setSending(false)
+    loadConversation()  // reloads even on failure, so the new FAILED row appears
+  }
+}
+```
+```tsx
+{replyError && <div className="alert alert-error">Failed to send: {replyError}</div>}
+```
+and the history row itself:
+```tsx
+<div className={`message-bubble ${msg.status === 'FAILED' ? 'message-bubble-failed' : ''}`}>
+  ...
+  {msg.status === 'FAILED' && <span className="message-failed-label"> · Failed to send</span>}
+</div>
+```
+**Verified with a real Meta API rejection, not a mocked error.** Rather than risk disrupting the one real verified test recipient (`+96171819509`, used throughout M6's own real-send verification), injected a synthetic inbound webhook event for a disposable fabricated number (`+15555550199`) directly at `POST /webhook` — this endpoint enforces no Meta signature verification (confirmed by reading `whatsapp.controller.ts`), the same gap M1's own verification already relied on. This created a real lead + conversation + inbound message via the real webhook code path (not mocked), opening its 24-hour window. Then called the real `POST /api/v1/inbox/:id/reply` — Meta's real Cloud API rejected the send because the number isn't a verified test recipient:
+```
+{"error":"Meta Cloud API request failed: (#131030) Recipient phone number not in allowed list"}
+HTTP 502
+```
+and confirmed the backend had persisted the matching row: `{"direction":"OUTBOUND","status":"FAILED","content":"..."}`. `replyError` (from the caught `ApiError`) would render that exact message text under "Failed to send:", and the same message's history row would independently get `message-bubble-failed` + the "· Failed to send" label — both driven by the one real `FAILED` status, so the transient alert and the persisted row are guaranteed to agree, not two independently-maintained copies. Test fixtures (message rows, conversation, lead) deleted via direct `psql` afterward — no delete endpoint exists for any of these, same constraint noted in Steps 1/3. **Cleanup confirmed by re-querying, not by trusting the delete command's exit status**: `SELECT` by phone `+15555550199` (0 rows), by the fabricated lead id in `leads`/`conversations`/`messages` (0 rows each), by the specific `meta_message_id` prefix used in the test (0 rows), and a full `leads` table check afterward (3 rows — exactly the original `+16315551181`/`+16315551182`/`+96171819509`, nothing added or missing).
+
+**3. Inbound vs outbound distinction.**
+```tsx
+<div key={msg.id} className={`message-row message-${msg.direction.toLowerCase()}`}>
+```
+```css
+.message-row.message-inbound { justify-content: flex-start; }
+.message-row.message-outbound { justify-content: flex-end; }
+.message-row.message-outbound .message-bubble { background: #d3e9ff; }
+```
+plus a text label: `{msg.direction === 'INBOUND' ? 'Received' : 'Sent'}`. Traced against the real conversation `7139bffe...`'s actual message history (6 real rows alternating `OUTBOUND`/`INBOUND`/`OUTBOUND`/`INBOUND`/`OUTBOUND`/`INBOUND` from real M6 verification) — each row's `direction` value deterministically selects a distinct alignment, background color, and label; there is no shared/ambiguous rendering path between the two.
+
+**Mark Closed**, verified against a real conversation: `PATCH .../status` with `{"status":"CLOSED"}` → `200`, conversation now `CLOSED`. Also confirmed the backend's own restriction the UI relies on for not offering a reopen affordance: `PATCH .../status` with `{"status":"ACTIVE"}` → `400 "Invalid status: ACTIVE. Only \"CLOSED\" is accepted here."` State restored afterward via direct `psql` (no reopen endpoint exists, by design per this step's explicit exclusions).
+
+**Gaps and decisions flagged, not folded in silently:**
+1. **Duplicated business logic, not shared — considered and rejected switching to optimistic UI, on record.** `isWithinCustomerServiceWindow` on the frontend re-implements `inbox.service.ts`'s 24-hour-window rule (same anchor, same threshold). On review, considered dropping the client-side check entirely and using optimistic UI instead — always show the reply form enabled, only reveal the blocked state after a real `409` comes back from an attempt. Rejected: the window is fully deterministic and computable from data the page already has in memory (the message history it just fetched) — this isn't a race-condition case like the campaign daily-limit, where the true state genuinely can't be known until the request lands. Optimistic UI here would mean every blocked attempt costs a full round trip and lets the user type into a form that was never going to work, for zero gain in correctness. **The actual fix for the duplication, recommended but not implemented here**: have the backend expose the precomputed result — e.g. `GET /inbox/:id` returning a `withinCustomerServiceWindow: boolean` (or a `replyWindowClosesAt` timestamp) computed once in `inbox.service.ts` using the exact logic `replyToConversation` already enforces, so the frontend reads a value instead of re-deriving the rule. Same instant, preemptive UX; one source of truth instead of two. Not implemented here since it's a backend API-shape change beyond this page's scope — flagged as the concrete fix to make before M9, not just "keep both copies in sync."
+2. **Two-pane list+detail layout** is an implementation choice for "detail view" (Step 4's objective doesn't specify layout) — still one page, no new endpoints, not scope creep like Step 3's "Start New Campaign," just noted for completeness.
+3. Same standing note as Steps 2-3: this trace-only verification is against real API responses and real DB state fetched in this session, not framework claims — but it is still not a rendered screenshot.
+
+`npm run build` (tsc + vite) passes with no type errors.
 
 ---
 

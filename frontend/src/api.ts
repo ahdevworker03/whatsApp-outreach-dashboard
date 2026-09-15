@@ -89,42 +89,57 @@ export const api = {
   deleteLead: (id: string) =>
     apiCall<{ deleted: true }>(`/leads/${id}`, { method: 'DELETE' }),
 
-  getCampaign: () =>
-    apiCall('/campaign'),
+  // GET /api/v1/campaign returns 404 when no campaign is configured yet
+  // (docs/architecture/05-api-design.md documents 200-only, but the actual
+  // controller 404s — see backend/src/campaigns/campaign.controller.ts).
+  // Surfaced here as null, a valid "nothing configured yet" state for the
+  // page to render, rather than an error to throw.
+  getCampaign: async (): Promise<Campaign | null> => {
+    try {
+      return await apiCall<Campaign>('/campaign')
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        return null
+      }
+      throw err
+    }
+  },
 
-  createCampaign: (data: unknown) =>
-    apiCall('/campaign', { method: 'POST', body: data }),
+  createCampaign: (data: CampaignFormInput) =>
+    apiCall<Campaign>('/campaign', { method: 'POST', body: toCampaignRequestBody(data) }),
 
-  updateCampaign: (id: string, data: unknown) =>
-    apiCall(`/campaign/${id}`, { method: 'PATCH', body: data }),
+  updateCampaign: (id: string, data: Partial<CampaignFormInput>) =>
+    apiCall<Campaign>(`/campaign/${id}`, { method: 'PATCH', body: toCampaignRequestBody(data) }),
 
-  updateCampaignStatus: (id: string, status: string) =>
-    apiCall(`/campaign/${id}/status`, {
+  updateCampaignStatus: (id: string, status: CampaignStatus) =>
+    apiCall<Campaign>(`/campaign/${id}/status`, {
       method: 'PATCH',
       body: { status }
     }),
 
   sendMessage: (leadId: string) =>
-    apiCall('/messages/send', { method: 'POST', body: { lead_id: leadId } }),
+    apiCall<Message>('/messages/send', { method: 'POST', body: { lead_id: leadId } }),
 
-  getInbox: (status?: string, page = 1, limit = 50) =>
-    apiCall<{ conversations: unknown[]; total: number }>(
+  getInbox: (status?: ConversationStatus, page = 1, limit = 50) =>
+    apiCall<{ conversations: ConversationListItem[]; total: number }>(
       `/inbox?page=${page}&limit=${limit}${status ? `&status=${status}` : ''}`
     ),
 
   getConversation: (id: string) =>
-    apiCall(`/inbox/${id}`),
+    apiCall<ConversationDetail>(`/inbox/${id}`),
 
   replyToConversation: (id: string, message: string) =>
-    apiCall(`/inbox/${id}/reply`, {
+    apiCall<Message>(`/inbox/${id}/reply`, {
       method: 'POST',
       body: { message }
     }),
 
-  updateConversationStatus: (id: string, status: string) =>
-    apiCall(`/inbox/${id}/status`, {
+  // The backend only accepts "CLOSED" here (inbox.controller.ts's
+  // updateInboxStatus rejects any other value) — typed narrowly to match.
+  closeConversation: (id: string) =>
+    apiCall<ConversationListItem>(`/inbox/${id}/status`, {
       method: 'PATCH',
-      body: { status }
+      body: { status: 'CLOSED' }
     }),
 
   getSettings: () =>
@@ -172,4 +187,81 @@ export interface ImportLeadsResult {
   imported: number
   duplicates: number
   failed: number
+}
+
+export type CampaignStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED'
+
+export interface Campaign {
+  id: string
+  name: string
+  status: CampaignStatus
+  initialTemplateId: string
+  followup1TemplateId: string
+  followup1DelayHours: number
+  followup2TemplateId: string
+  followup2DelayHours: number
+  dailyLimit: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface CampaignFormInput {
+  name: string
+  initialTemplateId: string
+  followup1TemplateId: string
+  followup1DelayHours: number
+  followup2TemplateId: string
+  followup2DelayHours: number
+  dailyLimit?: number
+}
+
+// POST/PATCH /api/v1/campaign expect snake_case (docs/architecture/05-api-
+// design.md section 4); everything else in this client stays camelCase to
+// match what the backend returns, so the mapping lives only at the edge.
+function toCampaignRequestBody(data: Partial<CampaignFormInput>): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  if (data.name !== undefined) body.name = data.name
+  if (data.initialTemplateId !== undefined) body.initial_template_id = data.initialTemplateId
+  if (data.followup1TemplateId !== undefined) body.followup1_template_id = data.followup1TemplateId
+  if (data.followup1DelayHours !== undefined) body.followup1_delay_hours = data.followup1DelayHours
+  if (data.followup2TemplateId !== undefined) body.followup2_template_id = data.followup2TemplateId
+  if (data.followup2DelayHours !== undefined) body.followup2_delay_hours = data.followup2DelayHours
+  if (data.dailyLimit !== undefined) body.daily_limit = data.dailyLimit
+  return body
+}
+
+export type MessageStatus = 'PENDING' | 'SENT' | 'DELIVERED' | 'READ' | 'FAILED' | 'RECEIVED'
+
+export interface Message {
+  id: string
+  leadId: string
+  campaignId: string
+  direction: 'OUTBOUND' | 'INBOUND'
+  type: 'TEMPLATE' | 'TEXT'
+  content: string
+  status: MessageStatus
+  metaMessageId: string | null
+  isAutoReply: boolean
+  sentAt: string | null
+  deliveredAt: string | null
+  readAt: string | null
+  failedAt: string | null
+  createdAt: string
+}
+
+export type ConversationStatus = 'ACTIVE' | 'CLOSED'
+
+export interface ConversationListItem {
+  id: string
+  leadId: string
+  status: ConversationStatus
+  lastMessageAt: string | null
+  automationStopped: boolean
+  createdAt: string
+  updatedAt: string
+  lead: Lead
+}
+
+export interface ConversationDetail extends Omit<ConversationListItem, 'lead'> {
+  lead: Lead & { messages: Message[] }
 }
