@@ -1,0 +1,83 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *.tsx|*.jsx) echo '{\"systemMessage\":\"💡 React code detected. Try `/react` for React patterns and best practices.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *.ts|*.tsx) echo '{\"systemMessage\":\"💡 TypeScript code detected. Try `/typescript` for type safety patterns.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *test.ts|*spec.ts|*test.tsx|*spec.tsx) echo '{\"systemMessage\":\"✅ Test file detected. Try `/testing` for testing patterns and best practices.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in prisma/schema.prisma) echo '{\"systemMessage\":\"🗂️ Prisma schema detected. Try `/database-schema-design` or `/prisma` for schema design patterns.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in prisma/migrations/*|*.sql) echo '{\"systemMessage\":\"📊 Database migration detected. Try `/migrations` or `/postgresql` for migration patterns.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in src/api/*|src/routes/*|src/middleware/*) echo '{\"systemMessage\":\"🔌 API code detected. Try `/express` for Express patterns or `/api-design` for API design.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in tailwind.config.*|*tailwind*) echo '{\"systemMessage\":\"🎨 Tailwind CSS detected. Try `/tailwind` for Tailwind styling best practices.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in .github/workflows/*) echo '{\"systemMessage\":\"🔄 GitHub Actions detected. Try `/github-actions` for CI/CD workflow patterns.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in .env*|config/*) echo '{\"systemMessage\":\"⚙️ Configuration file detected. Try `/environment-config` for config best practices.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *validation*|*validator*) echo '{\"systemMessage\":\"✔️ Validation code detected. Try `/validation` for validation patterns.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *error*|*exception*) echo '{\"systemMessage\":\"⚠️ Error handling code detected. Try `/error-handling` for error patterns.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          },
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // .tool_response.filePath' | { read -r f; case \"$f\" in *fetch*|*api*) echo '{\"systemMessage\":\"📡 Data fetching code detected. Try `/data-fetching` for fetching patterns.\",\"hookSpecificOutput\":{\"hookEventName\":\"PostToolUse\"}}' ;; esac; }",
+            "once": true,
+            "statusMessage": "Checking for skill suggestions..."
+          }
+        ]
+      }
+    ]
+  }
+}
