@@ -88,7 +88,15 @@ This page only. Read-only. Plain, large, clearly-labeled numbers — no charts/g
 Numbers shown match a direct DB query at the same moment, confirmed manually.
 
 **Result**
-To be filled in during implementation.
+`frontend/src/pages/DashboardPage.tsx` already existed from Step 0 (built there to prove the API client against a real endpoint) — this step made it the real deliverable: exported `DashboardStats` from `api.ts` instead of the page redeclaring its own duplicate local interface, and moved its styling out of a runtime-injected `<style>` tag (a leftover from the Step 0 scaffold) into `index.css`'s `.stats-grid`/`.stat-card` rules, consistent with every other page. No layout or behavior change — same 6 read-only `StatCard`s, no charts.
+
+Deliberately re-verified against a second, independent dataset rather than re-trusting Step 0's synthetic seed data — this specifically re-checks that Step 0's `contacted` fix (exact `CONTACTED` match, not `!= NEW`) holds outside the data it was fixed against:
+
+- Direct `psql`: `SELECT status, COUNT(*) FROM leads GROUP BY status` → `NEW: 2, REPLIED: 1` (the real dev DB state left behind after Step 1's testing was fully cleaned up).
+- `GET /api/v1/dashboard/stats` (the exact call `DashboardPage.tsx` makes): `{total_leads:3, contacted:0, replied:1, waiting_for_followup:0, completed:0, failed:0}` — matches what those 2 NEW + 1 REPLIED rows should produce exactly.
+- Traced `DashboardPage.tsx`'s render path: each `StatCard` takes its value directly from the response object (`stats.total_leads`, `stats.contacted`, etc.) with no intermediate transformation, so the rendered page shows exactly those six numbers. No browser automation tool was available in this session to capture a literal screenshot; verification here is the response-to-render code trace plus the confirmed API/DB match, same rigor as the DB-level checks in Steps 0-1.
+
+`npm run build` (tsc + vite) passes with no type errors.
 
 ---
 
@@ -163,7 +171,7 @@ To be filled in during implementation.
 
 - [x] Step 0 — Frontend Scaffold and API Client
 - [x] Step 1 — Leads Page
-- [ ] Step 2 — Dashboard Page
+- [x] Step 2 — Dashboard Page
 - [ ] Step 3 — Campaign Page
 - [ ] Step 4 — Inbox Page
 - [ ] Step 5 — Settings Page

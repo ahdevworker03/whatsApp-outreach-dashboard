@@ -1,17 +1,8 @@
 import { useEffect, useState } from 'react'
-import { api, ApiError } from '../api'
-
-interface Stats {
-  total_leads: number
-  contacted: number
-  replied: number
-  waiting_for_followup: number
-  completed: number
-  failed: number
-}
+import { api, ApiError, DashboardStats } from '../api'
 
 export default function DashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null)
+  const [stats, setStats] = useState<DashboardStats | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -60,38 +51,4 @@ function StatCard({ label, value }: { label: string; value: number }) {
       <div className="stat-value">{value}</div>
     </div>
   )
-}
-
-const styles = `
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-top: 24px;
-  }
-
-  .stat-card {
-    background: white;
-    padding: 20px;
-    border-radius: 4px;
-    border: 1px solid #ddd;
-  }
-
-  .stat-label {
-    font-size: 14px;
-    color: #666;
-    margin-bottom: 8px;
-  }
-
-  .stat-value {
-    font-size: 32px;
-    font-weight: 600;
-    color: #0066cc;
-  }
-`
-
-if (typeof document !== 'undefined') {
-  const style = document.createElement('style')
-  style.textContent = styles
-  document.head.appendChild(style)
 }

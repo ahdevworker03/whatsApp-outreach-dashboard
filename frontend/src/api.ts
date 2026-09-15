@@ -136,7 +136,7 @@ export const api = {
 
 export { ApiError }
 
-interface DashboardStats {
+export interface DashboardStats {
   total_leads: number
   contacted: number
   replied: number
