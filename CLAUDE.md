@@ -28,6 +28,7 @@ When guidance conflicts, follow this order:
 4. Relevant rule file for the task
 5. Existing code patterns
 6. AI assumptions
+7. Don't push anything you're own without approval.
 
 Never let assumptions override the approved scope in `docs/contract/WhatsApp Outreach Dashboard.md`.
 
