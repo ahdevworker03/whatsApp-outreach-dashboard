@@ -10,3 +10,33 @@ import { prisma } from "../prisma/client";
 export function getSettings() {
   return prisma.setting.findFirst();
 }
+
+// M7 Step 5: establishes the "always exactly one row" invariant on first
+// access — see settings.service.ts's getOrCreateSettings() for why this
+// lives at access time rather than a separate seed step.
+export function createDefaultSettings() {
+  return prisma.setting.create({
+    data: {
+      whatsappPhoneNumber: null,
+      whatsappPhoneNumberId: null,
+      autoReplyPatterns: [],
+    },
+  });
+}
+
+export interface UpdateSettingsInput {
+  whatsappPhoneNumber?: string | null;
+  whatsappPhoneNumberId?: string | null;
+  autoReplyPatterns?: string[];
+}
+
+export function updateSettings(id: string, data: UpdateSettingsInput) {
+  return prisma.setting.update({
+    where: { id },
+    data: {
+      ...(data.whatsappPhoneNumber !== undefined ? { whatsappPhoneNumber: data.whatsappPhoneNumber } : {}),
+      ...(data.whatsappPhoneNumberId !== undefined ? { whatsappPhoneNumberId: data.whatsappPhoneNumberId } : {}),
+      ...(data.autoReplyPatterns !== undefined ? { autoReplyPatterns: data.autoReplyPatterns } : {}),
+    },
+  });
+}

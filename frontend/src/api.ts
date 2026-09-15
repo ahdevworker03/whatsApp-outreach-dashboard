@@ -143,10 +143,10 @@ export const api = {
     }),
 
   getSettings: () =>
-    apiCall('/settings'),
+    apiCall<Settings>('/settings'),
 
-  updateSettings: (data: unknown) =>
-    apiCall('/settings', { method: 'PATCH', body: data })
+  updateSettings: (data: Partial<SettingsFormInput>) =>
+    apiCall<Settings>('/settings', { method: 'PATCH', body: toSettingsRequestBody(data) })
 }
 
 export { ApiError }
@@ -264,4 +264,28 @@ export interface ConversationListItem {
 
 export interface ConversationDetail extends Omit<ConversationListItem, 'lead'> {
   lead: Lead & { messages: Message[] }
+}
+
+export interface Settings {
+  id: string
+  whatsappPhoneNumber: string | null
+  whatsappPhoneNumberId: string | null
+  autoReplyPatterns: string[]
+  updatedAt: string
+}
+
+export interface SettingsFormInput {
+  whatsappPhoneNumber: string | null
+  whatsappPhoneNumberId: string | null
+  autoReplyPatterns: string[]
+}
+
+// PATCH /api/v1/settings expects snake_case (docs/architecture/05-api-
+// design.md section 8), same edge-mapping pattern as toCampaignRequestBody.
+function toSettingsRequestBody(data: Partial<SettingsFormInput>): Record<string, unknown> {
+  const body: Record<string, unknown> = {}
+  if (data.whatsappPhoneNumber !== undefined) body.whatsapp_phone_number = data.whatsappPhoneNumber
+  if (data.whatsappPhoneNumberId !== undefined) body.whatsapp_phone_number_id = data.whatsappPhoneNumberId
+  if (data.autoReplyPatterns !== undefined) body.auto_reply_patterns = data.autoReplyPatterns
+  return body
 }

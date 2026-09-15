@@ -477,3 +477,38 @@ tr:last-child td {
   max-width: 100%;
   resize: vertical;
 }
+
+/* Settings page */
+.settings-form {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 20px;
+  max-width: 500px;
+}
+
+.pattern-list {
+  list-style: none;
+  margin-bottom: 12px;
+}
+
+.pattern-list-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: #f5f5f5;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  max-width: 400px;
+}
+
+.pattern-add-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.pattern-add-row input {
+  max-width: 300px;
+}
