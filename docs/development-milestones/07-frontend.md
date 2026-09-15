@@ -15,7 +15,7 @@ Acceptance criteria for the milestone as a whole (from `01-mvp-plan.md`):
 
 ## What already exists
 
-- Full working API: `/api/v1/leads`, `/api/v1/campaign`, `/api/v1/messages/send`, `/api/v1/inbox`, `/api/v1/dashboard/stats`, `/api/v1/settings` — all built and verified M2-M6, real HTTP, real Meta sends.
+- Full working API: /api/v1/leads, /api/v1/campaign, /api/v1/messages/send, /api/v1/inbox, /api/v1/settings — all built and verified M2-M6, real HTTP, real Meta sends. /api/v1/dashboard/stats was documented in 05-api-design.md section 7 but never actually implemented in M2-M6 (confirmed: M2's own milestone doc explicitly states it doesn't exist yet) — this was an error in this M7 doc's original drafting, not a prior milestone regression. Built and verified in Step 0 instead (see Step 0's Result).
 - `API_ACCESS_TOKEN` bearer auth on all `/api/v1/*` routes.
 - No frontend code exists yet at all — `frontend/` is an empty folder per `project.md`'s repo structure.
 
