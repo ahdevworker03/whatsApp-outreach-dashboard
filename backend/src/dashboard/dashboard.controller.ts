@@ -11,7 +11,7 @@ export async function getStats(req: Request, res: Response) {
     failed
   ] = await Promise.all([
     prisma.lead.count(),
-    prisma.lead.count({ where: { status: { not: "NEW" } } }),
+    prisma.lead.count({ where: { status: "CONTACTED" } }),
     prisma.lead.count({ where: { status: "REPLIED" } }),
     prisma.lead.count({ where: { status: { in: ["FOLLOWUP_1_SENT", "FOLLOWUP_2_SENT"] } } }),
     prisma.lead.count({ where: { status: "COMPLETED" } }),
