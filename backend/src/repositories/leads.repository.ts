@@ -103,3 +103,13 @@ export function markLeadContacted(id: string, campaignId: string, followup1DueAt
     data: { status: "CONTACTED", campaignId, followup1DueAt },
   });
 }
+
+// M4/M7 correction: the initial send failing at the Meta call itself is a
+// "delivery failure" per docs/architecture/04-database-design.md's LeadStatus
+// enum ("FAILED — message delivery failed"), same as followup.repository.ts's
+// markLeadFailed for the follow-up sends. Kept here rather than imported
+// cross-domain from followup.repository.ts since leads.repository.ts already
+// owns every other lead status transition messages.service.ts makes.
+export function markLeadFailed(id: string) {
+  return prisma.lead.update({ where: { id }, data: { status: "FAILED" } });
+}

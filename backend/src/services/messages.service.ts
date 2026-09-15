@@ -107,19 +107,42 @@ export async function sendInitialTemplate(leadId: string) {
   }
 
   const components = buildTestTemplateComponents(lead.name);
-  const metaResponse = await sendTemplateMessage({
-    to: lead.phone,
-    templateName: campaign.initialTemplateId,
-    languageCode: "en_US",
-    components,
-  });
+
+  // M7 Step 6 finding: this call previously had no try/catch, so a Meta
+  // rejection left zero trace (lead stayed NEW, no message row, Dashboard
+  // unaffected) — the only sign of failure was the transient 502 response.
+  // Mirrors inbox.service.ts's replyToConversation and followup.service.ts's
+  // sendFollowup, both of which already record a FAILED message row and mark
+  // the lead FAILED on a Meta rejection ("delivery failure → FAILED" per
+  // docs/architecture/04-database-design.md's LeadStatus enum). The error is
+  // still re-thrown afterward — MetaApiError still maps to 502 in
+  // errorHandler.ts, so callers see the same HTTP behavior as before.
+  let metaMessageId: string;
+  try {
+    const metaResponse = await sendTemplateMessage({
+      to: lead.phone,
+      templateName: campaign.initialTemplateId,
+      languageCode: "en_US",
+      components,
+    });
+    metaMessageId = metaResponse.messages[0].id;
+  } catch (error) {
+    await messagesRepo.createFailedOutboundTemplateMessage({
+      leadId: lead.id,
+      campaignId: campaign.id,
+      content: renderMessageContent(campaign.initialTemplateId, lead.name),
+      failedAt: new Date(),
+    });
+    await leadsRepo.markLeadFailed(lead.id);
+    throw error;
+  }
 
   const sentAt = new Date();
   const message = await messagesRepo.createOutboundTemplateMessage({
     leadId: lead.id,
     campaignId: campaign.id,
     content: renderMessageContent(campaign.initialTemplateId, lead.name),
-    metaMessageId: metaResponse.messages[0].id,
+    metaMessageId,
     sentAt,
   });
 

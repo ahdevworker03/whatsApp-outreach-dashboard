@@ -278,7 +278,27 @@ Verification only.
 Matches M7's stated acceptance in `01-mvp-plan.md` — all five pages function against the real backend, Dashboard stats match actual data.
 
 **Result**
-To be filled in during implementation.
+**Decision flagged before executing, not made unilaterally**: this walkthrough needs a genuinely successful real send somewhere in the chain (Steps 3-4 already proved guard/failure paths thoroughly, but no step had yet completed one real successful send through this M7 frontend's exact code path). Only one phone number in this environment (`+96171819509`) is Meta-verified to receive messages, and it already carries real accumulated history from M4/M6. Asked the user how to handle this rather than deciding solo; chosen approach: **reuse that number for the reply/close legs without touching its lead status at all**, and use a freshly-imported non-verified lead for the "Send" leg specifically to exercise a real live 502 (a case Step 3 explicitly declined to trigger). Fully non-destructive to prior evidence.
+
+**Walked all five pages against the real backend and real dev DB, in the order Step 6 specifies:**
+
+1. **Import** — `POST /api/v1/leads/import` with a real 2-row CSV → `{imported:2, duplicates:0, failed:0}`. (First attempt used `+1555...` numbers and got `failed:2` — libphonenumber correctly rejects the reserved-for-fiction `555` exchange as an invalid NANP number, not a bug; switched to the same valid-format pattern already established in Step 1's `verify-leads-service.ts` parity test.) Confirmed via `GET /leads?status=NEW` — both new leads present with correct `name`/`businessName`/`sourceFile`/`status`, exactly what `LeadsPage`'s table renders.
+2. **Activate campaign** — already `ACTIVE` (the same "Placeholder (pre-M4)" campaign whose activate/pause guards Step 3 fully proved); not re-tested here since Step 6 is integration verification, not guard re-verification.
+3. **Send** — `POST /api/v1/messages/send` to one freshly-imported lead → real `502` from Meta (`"(#131030) Recipient phone number not in allowed list"`), the same genuine rejection reason as Step 4's. **New finding, not previously checked**: unlike `inbox.service.ts`'s `replyToConversation` (which wraps its Meta call in try/catch and persists a `FAILED` message row before re-throwing), `messages.service.ts`'s `sendInitialTemplate` had **no try/catch around its Meta call at all** — confirmed empirically: after the `502`, the lead's `status` was still `NEW` (not moved, not `FAILED`), and zero message rows existed for that lead. Re-checked Dashboard stats before/after — unchanged, as expected given no row was ever written. This meant a failed campaign send left no trace anywhere in the app except the transient `sendError` alert in `CampaignPage` — not in Leads, not in Dashboard, not in any message history.
+
+**Fixed on request, not deferred** — this is a real gap against the contract's own Dashboard spec (Failed Messages must be accurate) with a small fix, since the correct pattern already existed in two sibling paths (`inbox.service.ts`'s M6 reply path, `followup.service.ts`'s M5 follow-up path). Wrapped `sendTemplateMessage()`'s call in `sendInitialTemplate()` in try/catch; on failure it now calls the already-existing `messagesRepo.createFailedOutboundTemplateMessage()` (added in M5, reused as-is — no new repository code needed for the message side) and a new `leadsRepo.markLeadFailed()` (mirroring `followup.repository.ts`'s existing function of the same name), then re-throws so the HTTP response is unchanged (`MetaApiError` still → `502`). **This is a correction to M4's send path, not new M7 scope** — flagged in both milestone docs: full detail in `04-campaign-outbound-messaging.md` Step 5's Result (`Corrected 2026-09-15`), same pattern already used there for the M4 Step 1 activation-guard correction.
+
+Re-verified with the same real-502 technique, same rigor as every other guard tested this milestone: imported a fresh `NEW` lead (`+14155552674`), sent to it, got the identical real Meta rejection, then confirmed — exactly one `Message` row (`OUTBOUND`/`TEMPLATE`/`FAILED`, no `metaMessageId`, `failedAt` set), the lead's `status` moved to `FAILED` (not `NEW`), and Dashboard's `failed` count moved from `0` to `1`. Cleaned up afterward via direct `psql` (a `FAILED` lead can't be deleted through the API's own blocked-if-contacted guard, same restriction as any non-`NEW` lead) — confirmed back to the original 3 leads and `{failed:0}`.
+4. **Dashboard** — confirmed stats correctly reflect real state at each checkpoint: before the failed send, `{total_leads:5, contacted:0, replied:1, ...}`; unchanged after (per finding above); final state after cleanup `{total_leads:3, contacted:0, replied:1, waiting_for_followup:0, completed:0, failed:0}`, cross-checked directly against `psql` (`NEW: 2, REPLIED: 1`) — exact match, consistent with every prior Dashboard verification in this milestone.
+5. **Inbox** — injected a real inbound webhook event for `+96171819509` (same no-signature-verification technique established in Steps 4-5, safe because it only writes to this app's own DB, never sends anything to the real phone) → conversation correctly resorted to the top of the list by `lastMessageAt` (`listConversations`'s documented ordering), confirming `InboxPage`'s list would show it first.
+6. **Reply** — `POST /api/v1/inbox/:id/reply` within the now-fresh 24-hour window → **a genuine successful real send**: `{"status":"SENT","metaMessageId":"wamid.HBgLOTYxNzE4MTk1MDkVAgARGBI0RjQ2MEQwMjg1QTc2QzYxMEIA", ...}` — the one real successful send this milestone's testing had not yet completed through this exact frontend code path (M4 proved it existed at the backend level; this is the same endpoint, now proven end-to-end for M7).
+7. **Close** — `PATCH /inbox/:id/status` with `{"status":"CLOSED"}` → `200`, then confirmed via `GET /inbox?status=CLOSED` — the conversation appears, count `1`. **Left `CLOSED`, not reverted** — unlike Step 4's isolated guard test (which was reverted since it wasn't part of an intended narrative), this is the walkthrough's actual intended final state, not test pollution.
+
+**Cleanup**: the two freshly-imported throwaway leads were deleted via the real `DELETE /api/v1/leads/:id` endpoint (both `NEW`, so permitted — incidentally exercising that action once more). Confirmed via `psql`: `leads` table back to the original 3 rows. `+96171819509`'s lead status (`REPLIED`) was never touched, per the chosen approach; its conversation is now `CLOSED` and carries two additional real messages (the injected inbound trigger and the real outbound reply) — intended additions to its ongoing real history, not cleaned up, consistent with how this lead has accumulated genuine test evidence across M4/M5/M6/M7 rather than being reset between uses.
+
+Acceptance criteria met: all five pages' actions were exercised against the real backend and real dev DB in this walkthrough (Settings' `auto_reply_patterns` linkage was already end-to-end verified in Step 5 and wasn't re-touched here, since re-triggering it wasn't part of this chain); Dashboard stats matched direct DB queries at every checkpoint.
+
+Same standing caveat as Steps 2-5: no visual/browser tool was available this session (not re-checked again this step, since the prior confirmation stands and nothing changed) — this verification is real HTTP/DB-level proof plus code traces, not rendered screenshots.
 
 ---
 
@@ -287,7 +307,7 @@ To be filled in during implementation.
 - [x] Step 0 — Frontend Scaffold and API Client
 - [x] Step 1 — Leads Page
 - [x] Step 2 — Dashboard Page
-- [ ] Step 3 — Campaign Page
-- [ ] Step 4 — Inbox Page
-- [ ] Step 5 — Settings Page
-- [ ] Step 6 — End-to-End Frontend Verification
+- [x] Step 3 — Campaign Page
+- [x] Step 4 — Inbox Page
+- [x] Step 5 — Settings Page
+- [x] Step 6 — End-to-End Frontend Verification
