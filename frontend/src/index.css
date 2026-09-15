@@ -208,3 +208,50 @@ tr:last-child td {
   color: #cc6600;
   border: 1px solid #ffcc66;
 }
+
+.inline-alert {
+  margin-top: 8px;
+  margin-bottom: 0;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+/* Leads page */
+.import-section,
+.filter-section {
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.import-section h2 {
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  background: #eee;
+  color: #555;
+}
+
+.status-new { background: #e6f0ff; color: #0052a3; }
+.status-contacted { background: #fff4e0; color: #b36b00; }
+.status-followup_1_sent { background: #fff4e0; color: #b36b00; }
+.status-followup_2_sent { background: #fff4e0; color: #b36b00; }
+.status-replied { background: #e6f9e6; color: #1a8a1a; }
+.status-completed { background: #e6f9e6; color: #1a8a1a; }
+.status-failed { background: #ffe6e6; color: #cc0000; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 16px;
+}

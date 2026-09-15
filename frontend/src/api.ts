@@ -59,27 +59,35 @@ export const api = {
   getDashboardStats: () =>
     apiCall<DashboardStats>('/dashboard/stats'),
 
-  getLeads: (status?: string, page = 1, limit = 50) =>
-    apiCall<{ leads: unknown[]; total: number }>(
+  getLeads: (status?: LeadStatus, page = 1, limit = 50) =>
+    apiCall<{ leads: Lead[]; total: number }>(
       `/leads?page=${page}&limit=${limit}${status ? `&status=${status}` : ''}`
     ),
 
-  importLeads: (file: File) => {
+  importLeads: async (file: File): Promise<ImportLeadsResult> => {
     const token = import.meta.env.VITE_API_TOKEN
     if (!token) throw new Error('API_TOKEN not configured')
 
     const formData = new FormData()
     formData.append('file', file)
 
-    return fetch(`${API_BASE}/leads/import`, {
+    const response = await fetch(`${API_BASE}/leads/import`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${token}` },
       body: formData
-    }).then(r => r.json())
+    })
+    const data = await response.json() as unknown
+
+    if (!response.ok) {
+      const error = data as { error?: string; code?: string }
+      throw new ApiError(response.status, error.code, error.error || `HTTP ${response.status}`)
+    }
+
+    return data as ImportLeadsResult
   },
 
   deleteLead: (id: string) =>
-    apiCall(`/leads/${id}`, { method: 'DELETE' }),
+    apiCall<{ deleted: true }>(`/leads/${id}`, { method: 'DELETE' }),
 
   getCampaign: () =>
     apiCall('/campaign'),
@@ -134,5 +142,34 @@ interface DashboardStats {
   replied: number
   waiting_for_followup: number
   completed: number
+  failed: number
+}
+
+export type LeadStatus =
+  | 'NEW'
+  | 'CONTACTED'
+  | 'FOLLOWUP_1_SENT'
+  | 'FOLLOWUP_2_SENT'
+  | 'REPLIED'
+  | 'COMPLETED'
+  | 'FAILED'
+
+export interface Lead {
+  id: string
+  phone: string
+  name: string | null
+  businessName: string | null
+  sourceFile: string | null
+  status: LeadStatus
+  campaignId: string | null
+  createdAt: string
+  updatedAt: string
+  followup1DueAt: string | null
+  followup2DueAt: string | null
+}
+
+export interface ImportLeadsResult {
+  imported: number
+  duplicates: number
   failed: number
 }

@@ -42,7 +42,11 @@ App runs locally, navigates between 5 empty pages, API client successfully calls
 Run locally, confirm a real authenticated call reaches the real backend.
 
 **Result**
-To be filled in during implementation.
+Scaffolded with Vite + React + TypeScript + react-router-dom. Sidebar with 5 nav links (Dashboard, Leads, Campaign, Inbox, Settings), each routing to an empty page. Shared API client (`frontend/src/api.ts`) attaches the bearer token from `VITE_API_TOKEN` and throws a typed `ApiError` (status, code, message) on any non-2xx response — every page below builds on this.
+
+`GET /api/v1/dashboard/stats` did not exist in the backend at the start of this step (see "What already exists" above) — built it (`backend/src/dashboard/`) to satisfy this step's acceptance criteria, since a frontend scaffold step needs one real endpoint to prove the client against. Initial version double-counted `contacted` as `status != NEW`; corrected to `status == CONTACTED` after review, since the dashboard's six categories must be mutually exclusive per `04-database-design.md`'s LeadStatus lifecycle. Verified with leads seeded across all 7 `LeadStatus` values, cross-checked against direct `psql` counts — all six values matched exactly with no overlap.
+
+Verified: `npm run build` passes (tsc + vite), dev server runs on :5173, all 5 routes navigate correctly, and a real authenticated `fetch` from the browser reaches the real backend and returns real dashboard numbers.
 
 ---
 
@@ -58,7 +62,17 @@ This page only. Plain table: phone, name, business name, status, created date. C
 A real CSV import through the UI produces the same result as the existing `verify-*` scripts get calling the API directly. Delete-blocked-if-contacted shows a clear message, not a raw error. Table is readable at a glance — status clearly visible per row.
 
 **Result**
-To be filled in during implementation.
+`frontend/src/pages/LeadsPage.tsx`: table (phone, name, business name, status badge, created date), status filter dropdown (all 7 `LeadStatus` values), pagination (20/page, matching the backend's `DEFAULT_PAGE_SIZE`), file input for CSV/Excel import with an imported/duplicates/failed summary, and a per-row Delete button. `api.ts` gained typed `Lead`/`LeadStatus`/`ImportLeadsResult` interfaces (previously `unknown[]`), and `importLeads` was fixed to check `response.ok` and throw `ApiError` consistently — it previously always resolved.
+
+Verified against the real backend and real dev DB, not just against a mocked/assumed shape:
+
+- **CSV import parity with `verify-leads-service.ts`**: posted the exact same 3-row CSV (1 valid, 1 invalid phone, 1 in-file duplicate) via `curl` to the same `POST /api/v1/leads/import` endpoint the UI calls. First import: `{imported:1, duplicates:1, failed:1}`. Re-import of the same file: `{imported:0, duplicates:2, failed:1}`. Both match the script's own assertions exactly.
+- **List + filter**: `GET /api/v1/leads` returned all leads; `GET /api/v1/leads?status=NEW` correctly narrowed the count.
+- **Delete on NEW**: real `DELETE` on a NEW lead returned `200 {deleted:true}`.
+- **Delete-blocked-if-contacted**: set a lead's status to `CONTACTED` directly in `psql`, then `DELETE` on it returned `409` with the backend's message — `LeadsPage.tsx`'s `handleDelete` catches `ApiError` with `status === 409` and renders "This lead has already been contacted and cannot be deleted." inline under that row, not the raw error body.
+- All test rows/status changes were reverted/cleaned up after verification; the dev DB was left in its pre-test state (3 leads: 2 NEW, 1 REPLIED).
+
+`npm run build` (tsc + vite) passes with no type errors.
 
 ---
 
@@ -147,8 +161,8 @@ To be filled in during implementation.
 
 ## Milestone Checklist
 
-- [ ] Step 0 — Frontend Scaffold and API Client
-- [ ] Step 1 — Leads Page
+- [x] Step 0 — Frontend Scaffold and API Client
+- [x] Step 1 — Leads Page
 - [ ] Step 2 — Dashboard Page
 - [ ] Step 3 — Campaign Page
 - [ ] Step 4 — Inbox Page
