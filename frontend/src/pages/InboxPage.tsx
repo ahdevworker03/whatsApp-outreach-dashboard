@@ -1,20 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError, ConversationDetail, ConversationListItem, ConversationStatus, Message } from '../api'
+import { api, ApiError, ConversationDetail, ConversationListItem, ConversationStatus } from '../api'
 
 const PAGE_SIZE = 20
-const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000
-
-// Mirrors inbox.service.ts's replyToConversation exactly: eligibility is
-// anchored to the lead's most recent INBOUND message, not the conversation's
-// lastMessageAt (which also moves on outbound sends). Computed client-side
-// from the same message history the detail view already has, so the reply
-// box can be disabled before the user ever attempts a send, not only after
-// a 409 comes back.
-function isWithinCustomerServiceWindow(messages: Message[]): boolean {
-  const lastInbound = [...messages].reverse().find((m) => m.direction === 'INBOUND')
-  if (!lastInbound) return false
-  return Date.now() - new Date(lastInbound.createdAt).getTime() < CUSTOMER_SERVICE_WINDOW_MS
-}
 
 export default function InboxPage() {
   const [conversations, setConversations] = useState<ConversationListItem[]>([])
@@ -200,7 +187,7 @@ function ConversationDetailView({
   if (!conversation) return null
 
   const messages = conversation.lead.messages
-  const withinWindow = isWithinCustomerServiceWindow(messages)
+  const withinWindow = conversation.withinCustomerServiceWindow
 
   return (
     <div>

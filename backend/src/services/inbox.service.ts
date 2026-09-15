@@ -50,15 +50,40 @@ export async function listConversations(params: ListConversationsParams) {
   return { conversations, total };
 }
 
+const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// Single source of truth for the 24-hour customer service window rule
+// (anchored to the customer's most recent INBOUND message, per the finding
+// recorded on OutsideCustomerServiceWindowError below). Both
+// replyToConversation's enforcement and getConversationById's advisory
+// withinCustomerServiceWindow field call this — the frontend used to
+// reimplement this same check client-side; it now just reads the field
+// this function produces (docs/development-milestones/07-frontend.md Step 4).
+function isWithinCustomerServiceWindow(lastInboundMessageCreatedAt: Date | null): boolean {
+  return (
+    lastInboundMessageCreatedAt !== null &&
+    Date.now() - lastInboundMessageCreatedAt.getTime() < CUSTOMER_SERVICE_WINDOW_MS
+  );
+}
+
+// GET /api/v1/inbox/:conversation_id (docs/architecture/05-api-design.md
+// section 6). withinCustomerServiceWindow is computed here, not left for the
+// frontend to derive from the message array, so there is exactly one
+// implementation of the window rule in the codebase.
 export async function getConversationById(id: string) {
   const conversation = await repo.findConversationById(id);
   if (!conversation) {
     throw new ConversationNotFoundError(id);
   }
-  return conversation;
-}
 
-const CUSTOMER_SERVICE_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const messages = conversation.lead.messages;
+  const lastInbound = [...messages].reverse().find((m) => m.direction === "INBOUND");
+
+  return {
+    ...conversation,
+    withinCustomerServiceWindow: isWithinCustomerServiceWindow(lastInbound?.createdAt ?? null),
+  };
+}
 
 // POST /api/v1/inbox/:conversation_id/reply (docs/architecture/
 // 05-api-design.md section 5). Enforces the 24-hour window, sends via
@@ -73,9 +98,7 @@ export async function replyToConversation(conversationId: string, message: strin
   }
 
   const lastInbound = await repo.findMostRecentInboundMessage(conversation.lead.id);
-  const withinWindow =
-    lastInbound !== null && Date.now() - lastInbound.createdAt.getTime() < CUSTOMER_SERVICE_WINDOW_MS;
-  if (!withinWindow) {
+  if (!isWithinCustomerServiceWindow(lastInbound?.createdAt ?? null)) {
     // Blocked before any Meta call — Step 0's finding that pre-emptive
     // blocking is required, not just Meta's own error as a backstop.
     throw new OutsideCustomerServiceWindowError(conversationId);

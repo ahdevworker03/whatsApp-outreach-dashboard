@@ -74,7 +74,7 @@ The backend exposes a REST API consumed by the React frontend. It also exposes a
 
 **GET /api/v1/inbox/:conversation_id**
 - Get a conversation with full message history
-- Response 200: Conversation object with messages array
+- Response 200: Conversation object with messages array, plus `withinCustomerServiceWindow: boolean` — computed by `inbox.service.ts` from the lead's most recent INBOUND message, using the same 24-hour-window logic `POST .../reply` enforces. Lets the frontend show the reply-window warning without reimplementing the rule client-side.
 
 **PATCH /api/v1/inbox/:conversation_id/status**
 - Mark conversation as CLOSED

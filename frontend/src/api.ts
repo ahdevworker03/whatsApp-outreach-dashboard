@@ -264,6 +264,7 @@ export interface ConversationListItem {
 
 export interface ConversationDetail extends Omit<ConversationListItem, 'lead'> {
   lead: Lead & { messages: Message[] }
+  withinCustomerServiceWindow: boolean
 }
 
 export interface Settings {
