@@ -96,6 +96,8 @@ Deliberately re-verified against a second, independent dataset rather than re-tr
 - `GET /api/v1/dashboard/stats` (the exact call `DashboardPage.tsx` makes): `{total_leads:3, contacted:0, replied:1, waiting_for_followup:0, completed:0, failed:0}` — matches what those 2 NEW + 1 REPLIED rows should produce exactly.
 - Traced `DashboardPage.tsx`'s render path: each `StatCard` takes its value directly from the response object (`stats.total_leads`, `stats.contacted`, etc.) with no intermediate transformation, so the rendered page shows exactly those six numbers. No browser automation tool was available in this session to capture a literal screenshot; verification here is the response-to-render code trace plus the confirmed API/DB match, same rigor as the DB-level checks in Steps 0-1.
 
+**Accepted, with a standing caveat:** numeric correctness is confirmed end-to-end (DB → API → component prop); visual rendering is confirmed by code trace, not a screenshot. Acceptable for this step specifically because the page has no charts, no conditional rendering, and no complex layout — a direct prop-to-text mapping has no room for a trace/render mismatch. **Flagged as a standing gap for Steps 3-5**: those pages have real conditional UI (guard messages, disabled states, inbound/outbound message alignment, form validation) where a code trace is a materially weaker substitute for an actual rendered screenshot. Resolve this gap — via a working browser automation tool or another concrete visual-verification method — before treating trace-only verification as sufficient on those steps.
+
 `npm run build` (tsc + vite) passes with no type errors.
 
 ---
